@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Search Engine</title>
+</head>
+<body>
+  <form id="searchForm">
+    <div class="searchBar">
+      <input id="request" name="request" type="text" placeholder="Search...">
+    </div>
+
+    <div class="specifications">
+      <label>
+        <input type="radio" name="specification" value="author" checked> Author
+      </label>
+      <label>
+        <input type="radio" name="specification" value="title"> Title
+      </label>
+      <label>
+        <input type="radio" name="specification" value="tags"> Tags
+      </label>
+      <label>
+        <input type="radio" name="specification" value="description"> Keyword
+      </label>
+    </div>
+    <button type="submit">Search</button>
+  </form>
+  <script src="/js/search.js"></script>
+  <div id="results">
+  </div>
+</body>
+</html>
