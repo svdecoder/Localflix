@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Add a movie</title>
+    </head>
+    <body>
+        <div id="header">
+        </div>
+        <form method="POST" enctype="multipart/form-data" action="/add-episode" name="add">
+            <label for="title">Episode title:</label><br>
+            <input type="text" id="title" name="title"><br><br>
+
+            <label for="description">Description:</label><br><br>
+            <input type="text" id="description" name="description"><br><br>
+
+            <label for="releaseDate">Release date (YYYY-MM-DD):</label><br><br>
+            <input type="text" id="releaseDate" name="releaseDate"><br><br>
+
+            <label for="season">Season:</label><br><br>
+            <input type="number" id="season" name="season"><br><br>
+            <label for="season">Episode:</label><br><br>
+            <input type="number" id="episod" name="episod"><br><br>
+
+            <label for="serieID">Serie ID:</label><br><br>
+            <input type="text" id="serieID" name="serieID"><br><br>
+
+            <label for="episode">Episode file:</label><br><br>
+            <input type="file" accept="video/*" id="episode" name="episode">
+
+            <input type="submit" value="Submit">
+        </form>
+        <script src="/js/header.js"></script>
+    </body>
+</html>

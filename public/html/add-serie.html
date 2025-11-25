@@ -5,10 +5,9 @@
     </hear>
     <body>
         <div id="header">
-
         </div>
-        <form method="POST" enctype="multipart/form-data" action="/add-movie" name="add">
-            <label for="title">Movie title:</label><br>
+        <form method="POST" enctype="multipart/form-data" action="/add-serie" name="add">
+            <label for="title">Serie title:</label><br>
             <input type="text" id="title" name="title"><br><br>
             <label for="description">Description:</label><br><br>
             <input type="text" id="description" name="description"><br><br>
@@ -16,10 +15,11 @@
             <input type="text" id="tags" name="tags"><br><br>
             <label for="author">Author name:</label><br><br>
             <input type="text" id="author" name="author"><br><br>
+            <label for="NoS">Number of seasons:</label><br><br>
+            <input type="text" id="NoS" name="NoS"><br><br>
             <label for="releaseDate">Release date (YYYY-MM-DD):</label><br><br>
             <input type="text" id="releaseDate" name="releaseDate"><br><br>
-            <label for="movie">Movie:</label><br><br>
-            <input type="file" accept="video/*"" id="movie" name="movie"><br><br>
+            <input type="file" accept="image/*"" id="image" name="image"><br><br>
             <input type="submit" value="Submit">
         </form>
         <script src="/js/header.js"></script>

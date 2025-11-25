@@ -1,6 +1,6 @@
 async function fetchApi() {
   try {
-    const response = await fetch("/api/identifiers");
+    const response = await fetch("/api/newVideo");
     if (!response.ok) {
       throw new Error(`The fetch went wrong: ${response.status}`);
     }
@@ -13,34 +13,48 @@ async function fetchApi() {
 
 async function dataParser () {
   let dataArray = await fetchApi();
+    serieData = []
     videoData = []
-    for (let i=0; i < dataArray.length; i++) {
+    for (let i=0; i < dataArray[0].length; i++) {
       data = [];
-      let dataObject = dataArray[i];
-      data.push(`/data/thumbnail/${dataObject.identifier}.jpg`);
+      let dataObject = dataArray[0][i];
+      data.push(`/data/thumbnail/serie/${dataObject.id}.jpg`);
       data.push(dataObject.tags);
       data.push(dataObject.title);
-      data.push(dataObject.identifier);
+      data.push(dataObject.id);
+      serieData.push(data);
+    }
+    for (let i=0; i < dataArray[1].length; i++) {
+      data = [];
+      let dataObject = dataArray[1][i];
+      data.push(`/data/thumbnail/${dataObject.id}.jpg`);
+      data.push(dataObject.tags);
+      data.push(dataObject.title);
+      data.push(dataObject.id);
       videoData.push(data);
     }
-    return videoData;
+    return [serieData, videoData];
 };
 
-function domInserter(dataArray) {
+function domInserter(dataArray, viewerType) {
   for (let i = 0; i < dataArray.length; i++) {
     let thumbnail = dataArray[i][0];
     let tags = dataArray[i][1];
     let title = dataArray[i][2];
     let identifier = dataArray[i][3];
     document.getElementById("latestVids").innerHTML += `
-    <a href="/viewerM?id=${identifier}">
+    <a href="/${viewerType}?id=${identifier}">
     <button class="elementVideo">
-      <img src=${thumbnail} alt="Thumbnail didn't loaded" class="videoButtonImage"><br>
+      <img src=${thumbnail} onerror="this.onerror=null; this.src='api/images/default_thumbnail.jpg';" class="videoButtonImage"><br>
       <span class="title">${title}</span><br>
       <span class="tag">${tags}</span>
     </button>
     </a>`
   }
+  document.getElementById("latestVids").innerHTML += `<br><br>`
 };
 
-dataParser().then(videoData => domInserter(videoData));
+dataParser().then(data => {
+  domInserter(data[0], 'serieDisplay');  
+  domInserter(data[1], 'viewerM');
+});

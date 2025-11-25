@@ -4,11 +4,10 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import dotenv from "dotenv";
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../data/mysql/.env') });
 
 export default async function vidIdentifiers (numberOfVid) {
     function getIdentifiers (numberOfVid) {
-        const tableName = "movie"
         const videoToDisplay = numberOfVid
         let con = mysql.createConnection({
             host:process.env.HOST,
@@ -22,7 +21,11 @@ export default async function vidIdentifiers (numberOfVid) {
                     console.log(`connection to the database failed: ${err}`)
                     reject(err)
                 }
-                let sql = `SELECT identifier, title, tags FROM ${tableName} ORDER BY id DESC LIMIT ${videoToDisplay};`
+                let sql = `(SELECT identifier AS id, title, tags FROM series ORDER BY id DESC LIMIT ${videoToDisplay})
+UNION
+(SELECT identifier AS id, title, tags FROM movie ORDER BY id DESC LIMIT ${videoToDisplay})
+ORDER BY id DESC
+`
                 con.query(
                     sql,
                     function (err, result) {
@@ -38,10 +41,14 @@ export default async function vidIdentifiers (numberOfVid) {
             })
         })
     }
-    var mysqlIdentifierResponse = await getIdentifiers(numberOfVid)
-    var movieData = []
-    for (const elements in mysqlIdentifierResponse) {
-        movieData.push(mysqlIdentifierResponse[elements])
+    var mysqlIdentifierResponse = await getIdentifiers(numberOfVid);
+    var data = [[], []];
+    for (let i = 0; i < mysqlIdentifierResponse.length; i++) {
+        if (mysqlIdentifierResponse[i].title == mysqlIdentifierResponse[i].id) {
+            data[0].push(mysqlIdentifierResponse[i])
+        } else {
+            data[1].push(mysqlIdentifierResponse[i])
+        }
     }
-    return movieData
+    return data
 };

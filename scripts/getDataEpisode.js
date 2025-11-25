@@ -1,12 +1,12 @@
 import mysql from "mysql2";
-import { fileURLToPath } from "url";
 import path from "path"; 
+import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, '../data/mysql/.env') });
 
-export default async function search (request, specifications) {
+export default async function getDataEpisode(identifier) {
     let con = mysql.createConnection({
         host:process.env.HOST,
         user: "localflix",
@@ -19,7 +19,7 @@ export default async function search (request, specifications) {
                 console.log(`There was an error while connecting to the database: ${err}`)
                 reject (err);
             }
-            let sql = (`SELECT * FROM movie WHERE ${specifications} LIKE '%${request}%'`);
+            let sql = (`SELECT * FROM episodes WHERE identifier = '${identifier}'`);
             con.query(
                 sql,
                 function (err, result) {
