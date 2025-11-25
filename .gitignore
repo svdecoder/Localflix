@@ -1,19 +1,11 @@
 .env
 
-data/*
-!data/.gitkeep
-!data/**/docker-compose.yml
-
-data/images/*
 data/movies/*
+data/serie/*
 data/uploads/*
 data/thumbnail/*
-data/mysql/*
-!data/images/docker-compose.yml
-!data/movies/docker-compose.yml
-!data/uploads/docker-compose.yml
-!data/thumbnail/docker-compose.yml
-!data/mysql/docker-compose.yml
+data/mysql/mysql-config/*
+data/mysql/mysql-data/*
 
 package-lock.json
 node_modules/

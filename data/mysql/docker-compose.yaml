@@ -1,0 +1,21 @@
+services:
+  db:
+    image: mysql:8.3.0
+    container_name: mysql_database
+    restart: unless-stopped
+
+    environment:
+      MYSQL_DATABASE: localflix_database
+      MYSQL_USER: localflix
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+
+    ports:
+      - "3306:3306"
+
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+      - ./mysql-config:/etc/mysql/conf.d
+
+volumes:
+  db_data:
