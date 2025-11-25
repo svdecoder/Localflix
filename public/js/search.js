@@ -34,10 +34,13 @@ async function resultInserter () {
         let tags = object.tags;
         let description = object.description;
         let author = object.author;
+        let mode = "null"
+        if (object.type == 'movie') {mode = 'viewerM';} else {mode = 'serieDisplay';}
+
         let thumbnail = `/data/thumbnail/${object.identifier}.jpg`
         document.getElementById("results").innerHTML += `
         <div class="result">
-            <a href="/viewer?id=${object.identifier}">
+            <a href="/${mode}?id=${object.identifier}">
                 <button class="elementVideo">
                     <img src=${thumbnail} alt="Thumbnail didn't loaded" class="videoButtonImage"><br>
                     <span class="title">${title}</span><br>

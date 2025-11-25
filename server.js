@@ -1,7 +1,6 @@
 import express from "express";
 import multer from "multer";
 const upload = multer({ dest: "data/uploads" });
-const serieThumbnailUpload = multer({dest : "data/thumbnail/serie"})
 
 import path from "path";
 import { fileURLToPath } from "url";
@@ -96,7 +95,7 @@ app.post('/add-movie', upload.single("movie"), (req, res) => {
 app.get("/add-serie", (req, res) => {
   res.sendFile(path.join(__dirname, "public/html", "add-serie.html"))
 })
-app.post('/add-serie', serieThumbnailUpload.single("image"), (req, res) => {
+app.post('/add-serie', upload.single("image"), (req, res) => {
     res.send("Serie created");
     addSerie(req);
 

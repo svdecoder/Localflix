@@ -19,7 +19,7 @@ export default async function search (request, specifications) {
                 console.log(`There was an error while connecting to the database: ${err}`)
                 reject (err);
             }
-            let sql = (`SELECT title, author, description, release_date, tags, identifier, created_at FROM movie WHERE ${specifications} LIKE '%${request}%' UNION SELECT title, author, description, release_date, tags, identifier, created_at FROM series WHERE ${specifications} LIKE '%${request}%';`);
+            let sql = (`SELECT title, author, description, release_date, tags, identifier, created_at, type FROM movie WHERE ${specifications} LIKE '%${request}%' UNION SELECT title, author, description, release_date, tags, identifier, created_at, type FROM series WHERE ${specifications} LIKE '%${request}%';`);
             con.query(
                 sql,
                 function (err, result) {

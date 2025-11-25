@@ -18,7 +18,7 @@ async function dataParser () {
     for (let i=0; i < dataArray[0].length; i++) {
       data = [];
       let dataObject = dataArray[0][i];
-      data.push(`/data/thumbnail/serie/${dataObject.id}.jpg`);
+      data.push(`/data/thumbnail/${dataObject.id}.jpg`);
       data.push(dataObject.tags);
       data.push(dataObject.title);
       data.push(dataObject.id);

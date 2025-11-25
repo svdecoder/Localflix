@@ -22,7 +22,7 @@ export default async function addSerie(req) {
     function thumbnailHandling(req) {
         let filename = req.file.filename
         let title = req.body.title
-        fs.rename(`data/thumbnail/serie/${filename}`, `data/thumbnail/serie/${title}.jpg`, (err) => {
+        fs.rename(`data/thumbnail/${filename}`, `data/thumbnail/${title}.jpg`, (err) => {
             if (err) throw err;
             console.log('file renamed')
         });
