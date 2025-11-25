@@ -1,4 +1,4 @@
-async function apiRequest(specifications, request) {
+async function apiRequest(specifications, request, type) {
     try {
         const response = await fetch(`/api/search?request=${request}&specification=${specifications}`);
         if (!response.ok) {
@@ -34,7 +34,6 @@ async function resultInserter () {
         let tags = object.tags;
         let description = object.description;
         let author = object.author;
-        let lenght = object.length_minutes;
         let thumbnail = `/data/thumbnail/${object.identifier}.jpg`
         document.getElementById("results").innerHTML += `
         <div class="result">
@@ -44,7 +43,6 @@ async function resultInserter () {
                     <span class="title">${title}</span><br>
                     <span class="description">${description}</span><br>
                     <span class="author">${author}</span><br>
-                    <span class="lenght">${lenght}</span><br>
                     <span class="tag">${tags}</span>
                 </button>
             </a>
