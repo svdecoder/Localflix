@@ -36,13 +36,13 @@ async function dataParser () {
     return [serieData, videoData];
 };
 
-function domInserter(dataArray, viewerType) {
+function domInserter(dataArray, viewerType, divName) {
   for (let i = 0; i < dataArray.length; i++) {
     let thumbnail = dataArray[i][0];
     let tags = dataArray[i][1];
     let title = dataArray[i][2];
     let identifier = dataArray[i][3];
-    document.getElementById("latestVids").innerHTML += `
+    document.getElementById(divName).innerHTML += `
     <a href="/${viewerType}?id=${identifier}">
     <button class="elementVideo">
       <img src=${thumbnail} onerror="this.onerror=null; this.src='api/images/default_thumbnail.jpg';" class="videoButtonImage"><br>
@@ -51,10 +51,9 @@ function domInserter(dataArray, viewerType) {
     </button>
     </a>`
   }
-  document.getElementById("latestVids").innerHTML += `<br><br>`
 };
 
 dataParser().then(data => {
-  domInserter(data[0], 'serieDisplay');  
-  domInserter(data[1], 'viewerM');
+  domInserter(data[0], 'serieDisplay', 'serie');  
+  domInserter(data[1], 'viewerM', 'movie');
 });

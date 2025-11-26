@@ -11,25 +11,28 @@ async function fetchApi(url) {
   }
 }
 
-function domInserter(dataArray, season, titleOfSerie) {
-  document.getElementById("EpisodesDisplay").innerHTML += `
-  <div class="EpisodesOfASeason>
-  <span class="Season">Season ${season}</span><br>`
+function domInserter(dataArray, seasonNumber, titleOfSerie) {
+  let epOfASeason = `
+  <div class="EpisodesOfASeason">
+    <span class="season">Season ${seasonNumber}</span>
+    <div class="video-grid">`
+  let cartToInsert = ''
   for (let i = 0; i < dataArray.length; i++) {
     console.log(dataArray[i])
     const {identifier, episode, season, description, date, createdAt, serieId, title} = dataArray[i];
     let thumbnail = `/data/thumbnail/${titleOfSerie}/${identifier}.jpg`
-    document.getElementById("EpisodesDisplay").innerHTML += `
-    <a href="/viewerS?id=${identifier}">
-    <button class="elementVideo">
-      <img src=${thumbnail} onerror="this.onerror=null; this.src='api/images/default_thumbnail.jpg';" class="videoButtonImage"><br>
-      <span class="title">${title}</span><br>
-      <span class="description">${description}</span><br>
-      <span class="information">Episode number ${episode} from season ${season}
-    </button>
-    </a>`
+    cartToInsert += `
+      <a href="/viewerS?id=${identifier}" class="video-link">
+      <div class="elementVideo">
+        <img src="${thumbnail}" onerror="this.onerror=null; this.src='api/images/default_thumbnail.jpg';" class="videoButtonImage">
+      <span class="title">${title}</span>
+      <span class="description">${description}</span>
+      <span class="information">Episode number ${episode} from season ${seasonNumber}</span>
+    </div>
+  </a>`
   }
-  document.getElementById("EpisodesDisplay").innerHTML += `</div><br><br>`
+      document.getElementById("EpisodesDisplay").innerHTML +=epOfASeason + cartToInsert + "</div></div>"
+
 };
 
 async function handler() {

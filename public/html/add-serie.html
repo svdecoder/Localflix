@@ -1,11 +1,13 @@
  <!DOCTYPE html>
 <html>
     <hear>
-        <title>Add a movie</title>
+        <title>Add a serie</title>
+        <link rel="stylesheet" href="/css/styles.css">
     </hear>
     <body>
         <div id="header">
         </div>
+        <div class="add-form">
         <form method="POST" enctype="multipart/form-data" action="/add-serie" name="add">
             <label for="title">Serie title:</label><br>
             <input type="text" id="title" name="title"><br><br>
@@ -16,12 +18,13 @@
             <label for="author">Author name:</label><br><br>
             <input type="text" id="author" name="author"><br><br>
             <label for="NoS">Number of seasons:</label><br><br>
-            <input type="text" id="NoS" name="NoS"><br><br>
+            <input type="number" id="NoS" name="NoS"><br><br>
             <label for="releaseDate">Release date (YYYY-MM-DD):</label><br><br>
             <input type="text" id="releaseDate" name="releaseDate"><br><br>
-            <input type="file" accept="image/*"" id="image" name="image"><br><br>
-            <input type="submit" value="Submit">
+            <input type="file" accept="image/*" id="image" name="image"><br><br>
+            <input type="submit" value="Submit" class="btn-submit">
         </form>
+        </div>
         <script src="/js/header.js"></script>
     </body>
 </html> 

@@ -21,22 +21,21 @@ async function domInserter() {
     let creationDate = dataObject[0].created_at;
     
     document.getElementById("videoInformation").innerHTML += `
-    <div class="videoInformations">
-      <span id="title">Titre: ${title}</span><br>
-      <span id="data">Auteurs: ${author}</span><br>
-      <span id="description">Description: ${description}</span><br>
-      <span id="data">Tags: ${tags}</span><br>
-      <span id="data">Créé en: ${creationDate}</span>
-    </div>
+<div class="videoInformations">
+    <div class="info-row"><span class="preceding-info">Title:</span><span class="value">${title}</span></div>
+    <div class="info-row"><span class="preceding-info">Authors:</span><span class="value">${author}</span></div>
+    <div class="info-row"><span class="preceding-info">Description:</span><span class="value">${description}</span></div>
+    <div class="info-row"><span class="preceding-info">Tags:</span><span class="value">${tags}</span></div>
+    <div class="info-row"><span class="preceding-info">Créé en:</span><span class="value">${creationDate}</span></div>
+</div>
+
     `
     let id = new URLSearchParams(window.location.search).get('id');
     let movieUrl = `/data/movie/${id}.mp4`
     document.getElementById("videoDisplay").innerHTML += `
-      <object 
-        id="video"
-        data="${movieUrl}" 
-        type="video/mp4">
-      </object>`
+      <video id="video" controls>
+        <source src=${movieUrl} type="video/mp4">
+      </video>`
 }
 
 

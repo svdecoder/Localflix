@@ -116,6 +116,7 @@ app.use("/data/movie", express.static(path.join(__dirname, "data/movies")));
 app.use("/data/serie", express.static(path.join(__dirname, "data/serie")));
 app.use("/api/images", express.static(path.join(__dirname, "data/images")));
 app.use("/js", express.static(path.join(__dirname, "public/js")));
+app.use("/css", express.static(path.join(__dirname, "public/css")));
 app.use("/", express.static(path.join(__dirname, "public/html")));
 app.use("/data/images/logo.png", express.static(path.join(__dirname, "/favicon.ico")))
 

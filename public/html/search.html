@@ -2,8 +2,13 @@
 <html>
 <head>
   <title>Search Engine</title>
+  <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
+  <div id="header">
+
+  </div>
+  <div class="searchModule">
   <form id="searchForm">
     <div class="searchBar">
       <input id="request" name="request" type="text" placeholder="Search...">
@@ -23,10 +28,12 @@
         <input type="radio" name="specification" value="description"> Keyword
       </label>
     </div>
-    <button type="submit">Search</button>
+    <button type="submit" class="searchButton">Search</button>
   </form>
+  </div>
   <script src="/js/search.js"></script>
   <div id="results">
   </div>
+  <script src="/js/header.js"></script>
 </body>
 </html>

@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title>Add a movie</title>
+        <title>Add an episode</title>
+        <link rel="stylesheet" href="/css/styles.css">
     </head>
     <body>
         <div id="header">
         </div>
+        <div class="add-form">
         <form method="POST" enctype="multipart/form-data" action="/add-episode" name="add">
             <label for="title">Episode title:</label><br>
             <input type="text" id="title" name="title"><br><br>
@@ -27,8 +29,9 @@
             <label for="episode">Episode file:</label><br><br>
             <input type="file" accept="video/*" id="episode" name="episode">
 
-            <input type="submit" value="Submit">
+            <input type="submit" value="Submit" class="btn-submit">
         </form>
+        </div>
         <script src="/js/header.js"></script>
     </body>
 </html>
