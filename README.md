@@ -1,63 +1,40 @@
-# Localflix
-Localflix is a JS based web open source streaming service.
+## LocalFlix
 
-## 📦 Database Storage
+A lightweight self-hosted media library for movies and series.
 
-To store data about movies and series, we use a **MySQL database** composed of **three different tables**.
+LocalFlix allows you to store, view, and manage your personal video collection with a simple browser interface.
+It includes a Node.js backend, HTML/CSS/JS frontend, and MySQL database.
 
----
+## Features
+### Movies
+* Add new movies
+* Upload video files
+* Auto-generated thumbnails
+* View movie details
+* Integrated video player
+### Series
+* Add series
+* Add episodes per season
+* Upload episode videos
+* Automatic thumbnail generation
+* Episode viewer interface
+### Search
+* Search movies and series by title, tags, authors or description (by keyword)
+### Data Storage
+* Files stored locally under /data
+* Movie/series metadata stored in MySQL
+* Clean directory structure to keep media organized
 
-### 🎬 Table: `movie`
+## Database
+The project uses a MySQL database.
 
-This table contains all information related to movies.
+Tables included (from schema.sql):
+* **movie**
+* **series**
+* **episodes**
 
-| Field          | Type         | Null | Key | Default           | Extra                                         |
-|----------------|--------------|------|-----|-------------------|-----------------------------------------------|
-| id             | int          | NO   | PRI | NULL              | auto_increment                                |
-| title          | varchar(255) | NO   |     | NULL              |                                               |
-| identifier     | text         | YES  |     | NULL              |                                               |
-| description    | text         | YES  |     | NULL              |                                               |
-| author         | text         | YES  |     | NULL              |                                               |
-| length_minutes | int          | YES  |     | NULL              |                                               |
-| release_date   | date         | YES  |     | NULL              |                                               |
-| tags           | varchar(255) | YES  |     | NULL              |                                               |
-| updated_at     | timestamp    | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP |
-| created_at     | timestamp    | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED                             |
-
----
-
-### 📺 Table: `series`
-
-This table contains all the global data relative to a series (author, title, global description, number of seasons, etc.).
-
-| Field             | Type         | Null | Key | Default           | Extra             |
-|-------------------|--------------|------|-----|-------------------|-------------------|
-| id                | int          | NO   | PRI | NULL              | auto_increment    |
-| title             | varchar(255) | NO   |     | NULL              |                   |
-| author            | varchar(255) | YES  |     | NULL              |                   |
-| description       | text         | YES  |     | NULL              |                   |
-| created_at        | datetime     | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED |
-| number_of_seasons | int          | YES  |     | 1                 |                   |
-
----
-
-### 📖 Table: `episodes`
-
-This table contains all the data relative to specific episodes of a series (description, release date, episode number, specific identifier, etc.).
-
-| Field       | Type         | Null | Key | Default | Extra |
-|--------------|--------------|------|-----|---------|-------|
-| identifier  | varchar(255) | YES  |     | NULL    |       |
-| episode     | int          | YES  |     | NULL    |       |
-| season      | int          | YES  |     | NULL    |       |
-| description | varchar(255) | YES  |     | NULL    |       |
-| date        | date         | YES  |     | NULL    |       |
-| created_at  | datetime     | YES  |     | NULL    |       |
-| serie_id    | int          | YES  | MUL | NULL    |       |
-
----
-
-### 🧩 Relationships
-
-- A **series** can have **multiple episodes** (1-to-many relationship between `series` and `episodes` via `serie_id`).
-- A **movie** is independent and not linked to the `series` or `episodes` tables.
+### Database Initialisation
+* 1) Enter the localflix and admin passwords inside data/mysql/.env
+* 2) docker compose up -d
+* 3) docker exec -it <your mysql docker name> bash
+* 4) mysql -u root -p localflix < data/mysql/schema.sql
