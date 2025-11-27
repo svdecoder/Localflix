@@ -7,10 +7,13 @@ const __dirname = path.dirname(__filename);
 import dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, '../data/mysql/.env') });
 
+function inputSanitize(input) {
+    return String(input).replace(/[^A-Za-z0-9._\- ]+/g, '');
+}
 
 export default async function addSerie(req) {
     console.log(req.body)
-    const title = req.body.title;
+    const title = inputSanitize(req.body.title);
     const folderPath = path.join(__dirname, "../data/serie", title);
     try {
         await fs.mkdir(folderPath, { recursive: true });
@@ -22,19 +25,19 @@ export default async function addSerie(req) {
     function thumbnailHandling(req) {
         let filename = req.file.filename
         let title = req.body.title
-        fs.rename(`data/thumbnail/${filename}`, `data/thumbnail/${title}.jpg`, (err) => {
+        fs.rename(`data/uploads/${filename}`, `data/thumbnail/${title}.jpg`, (err) => {
             if (err) throw err;
             console.log('file renamed')
         });
     }
     function dataBaseAdd(req) {
         return new Promise((resolve, reject) => {
-            const title = req.body.title;
-            const description = req.body.description;
-            const releaseDate = req.body.releaseDate;
-            const author = req.body.author;
-            const tags = req.body.tags;
-            const NoS = req.body.NoS;
+            const title = inputSanitize(req.body.title);
+            const description = inputSanitize(req.body.description);
+            const releaseDate = inputSanitize(req.body.releaseDate);
+            const author = inputSanitize(req.body.author);
+            const tags = inputSanitize(req.body.tags);
+            const NoS = inputSanitize(req.body.NoS);
                 const con = mysql.createConnection({
                     host:process.env.HOST,
                     user: "localflix",

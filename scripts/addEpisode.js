@@ -8,12 +8,15 @@ const __dirname = path.dirname(__filename);
 import dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, '../data/mysql/.env') });
 
+function inputSanitize(input) {
+    return String(input).replace(/[^A-Za-z0-9._\- ]+/g, '');
+}
 
 export default async function addEpisodeHandler(req) {
     function videoHandler(req) {
         return new Promise((resolve, reject) => {
             const file = req.file;
-            const serie = req.body.serieID;
+            const serie = inputSanitize(req.body.serieID);
             const episodePath = path.join(__dirname, "../data/serie", serie);
             const thumbnailPath = path.join(__dirname, "../data/thumbnail", serie);
             const uploadedFilePath = file.path;
@@ -67,13 +70,13 @@ export default async function addEpisodeHandler(req) {
     function dataBaseAdd(req) {
         return new Promise((resolve, reject) => {
             const tableName = "episodes";
-            const title = req.body.title;
-            const serie = req.body.serieID;
-            const date = req.body.releaseDate;
-            const episodeName = req.file.filename;
-            const description = req.body.description;
-            const episode = req.body.episod;
-            const season = req.body.season;
+            const title = inputSanitize(req.body.title);
+            const serie = inputSanitize(req.body.serieID);
+            const date = inputSanitize(req.body.releaseDate);
+            const episodeName = inputSanitize(req.file.filename);
+            const description = inputSanitize(req.body.description);
+            const episode = inputSanitize(req.body.episod);
+            const season = inputSanitize(req.body.season);
             const newEpisode = "data/serie/" + `${serie}/`+ req.file.filename + ".mp4";
             ffmpeg.ffprobe(newEpisode, (err, metadata) => {
                 if (err) {

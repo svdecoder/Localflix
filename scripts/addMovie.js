@@ -8,6 +8,9 @@ const __dirname = path.dirname(__filename);
 import dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, '../data/mysql/.env') });
 
+function inputSanitize(input) {
+    return String(input).replace(/[^A-Za-z0-9._\- ]+/g, '');
+}
 
 export default async function addMovieHandler(req) {
     function videoHandler (req) {
@@ -58,12 +61,12 @@ export default async function addMovieHandler(req) {
     function dataBaseAdd(req) {
         return new Promise((resolve, reject) => {
             const tableName = "movie";
-            const title = req.body.title;
-            const movieName = req.file.filename;
-            const description = req.body.description;
-            const releaseDate = req.body.releaseDate;
-            const author = req.body.author;
-            const tags = req.body.tags;
+            const title = inputSanitize(req.body.title);
+            const movieName = inputSanitize(req.file.filename);
+            const description = inputSanitize(req.body.description);
+            const releaseDate = inputSanitize(req.body.releaseDate);
+            const author = inputSanitize(req.body.author);
+            const tags = inputSanitize(req.body.tags);
             const newMovie = "data/movies/" + req.file.filename + ".mp4";
             ffmpeg.ffprobe(newMovie, (err, metadata) => {
                 if (err) {

@@ -89,25 +89,22 @@ app.get("/add-movie", (req, res) => {
     res.sendFile(path.join(__dirname, "public/html", "add-movie.html"))
 });
 app.post('/add-movie', upload.single("movie"), (req, res) => {
-    res.send("movie pushed")
+        res.redirect('/');
     addMovieHandler(req);
 });
 app.get("/add-serie", (req, res) => {
   res.sendFile(path.join(__dirname, "public/html", "add-serie.html"))
 })
 app.post('/add-serie', upload.single("image"), (req, res) => {
-    res.send("Serie created");
+    res.redirect('/');
     addSerie(req);
-
 });
 app.get("/add-episode", (req, res) => {
   res.sendFile(path.join(__dirname, "public/html", "add-episode.html"))
 })
 app.post('/add-episode', upload.single("episode"), (req, res) => {
-    console.log(req.body);
-    console.log(req.file); 
     addEpisodeHandler(req);
-    res.send("Episode uploaded successfully");
+    res.redirect('/');
 });
 
 

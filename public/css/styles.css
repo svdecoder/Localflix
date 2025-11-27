@@ -249,6 +249,7 @@ nav a:hover img {
     color: #ff4c4c;
     display: block;
     margin-bottom: 6px;
+    text-align: center; 
 }
 .add-form input[type="text"],
 .add-form input[type="file"],

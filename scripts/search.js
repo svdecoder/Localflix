@@ -6,7 +6,13 @@ const __dirname = path.dirname(__filename);
 import dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, '../data/mysql/.env') });
 
+function inputSanitize(input) {
+    return String(input).replace(/[^A-Za-z0-9._\- ]+/g, '');
+}
+
 export default async function search (request, specifications) {
+    request = inputSanitize(request)
+    specifications = inputSanitize(specifications)
     let con = mysql.createConnection({
         host:process.env.HOST,
         user: "localflix",
