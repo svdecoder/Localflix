@@ -29,9 +29,20 @@ nav ul {
 nav li {
     margin: 0 15px;
 }
-nav img {
-    height: 70px; 
-    width: auto; 
+.topHeader .logo img {
+    height: auto; 
+    width: 5vw; 
+    transition: transform 0.3s ease; 
+}
+.topHeader .search img {
+    height: auto; 
+    width: 10vw; 
+    transition: transform 0.3s ease; 
+}
+
+.topHeader .add img {
+    height: auto; 
+    width: 10vw; 
     transition: transform 0.3s ease; 
 }
 nav a:hover img {

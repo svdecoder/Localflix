@@ -115,7 +115,7 @@ app.use("/api/images", express.static(path.join(__dirname, "data/images")));
 app.use("/js", express.static(path.join(__dirname, "public/js")));
 app.use("/css", express.static(path.join(__dirname, "public/css")));
 app.use("/", express.static(path.join(__dirname, "public/html")));
-app.use("/data/images/icon.ico", express.static(path.join(__dirname, "/favicon.ico")))
+app.use("/favicon.ico", express.static(path.join(__dirname, "data/images/icon.ico")))
 
 app.listen(PORT, () => {console.log("running")});
 app.use(express.json());
