@@ -27,7 +27,7 @@ It includes a Node.js backend, HTML/CSS/JS frontend, and MySQL database.
 
 
 ## Start the server
-## Node JS
+### Node JS
 The project uses node JS to display the pages.
 ### Server initialization
 * 1) npm install
