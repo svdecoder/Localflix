@@ -25,7 +25,15 @@ It includes a Node.js backend, HTML/CSS/JS frontend, and MySQL database.
 * Movie/series metadata stored in MySQL
 * Clean directory structure to keep media organized
 
-## Database
+
+## Start the server
+## Node JS
+The project uses node JS to display the pages.
+### Server initialization
+* 1) npm install
+* 2) node server.js
+
+### Database
 The project uses a MySQL database.
 
 Tables included (from schema.sql):
