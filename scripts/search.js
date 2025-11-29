@@ -15,7 +15,7 @@ export default async function search (request, specifications) {
     specifications = inputSanitize(specifications)
     let con = mysql.createConnection({
         host:process.env.HOST,
-        user: "localflix",
+        user: "root",
         password: process.env.MYSQL_PASSWORD,
         database: process.env.DATABASE
     });

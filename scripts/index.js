@@ -16,7 +16,7 @@ export default async function vidIdentifiers (numberOfVid) {
         const videoToDisplay = numberOfVid
         let con = mysql.createConnection({
             host:process.env.HOST,
-            user: "localflix",
+            user: "root",
             password: process.env.MYSQL_PASSWORD,
             database: process.env.DATABASE
         });

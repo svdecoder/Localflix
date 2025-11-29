@@ -40,7 +40,7 @@ export default async function addSerie(req) {
             const NoS = inputSanitize(req.body.NoS);
                 const con = mysql.createConnection({
                     host:process.env.HOST,
-                    user: "localflix",
+                    user: "root",
                     password: process.env.MYSQL_PASSWORD,
                     database: process.env.DATABASE
                 });

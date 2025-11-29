@@ -77,7 +77,7 @@ export default async function addMovieHandler(req) {
                 const lengthMinutes = Math.round(durationSeconds / 60);
                 const con = mysql.createConnection({
                     host:process.env.HOST,
-                    user: "localflix",
+                    user: "root",
                     password: process.env.MYSQL_PASSWORD,
                     database: process.env.DATABASE
                 });

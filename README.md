@@ -30,8 +30,15 @@ It includes a Node.js backend, HTML/CSS/JS frontend, and MySQL database.
 ### Node JS
 The project uses node JS to display the pages.
 ### Server initialization
-* 1) npm install
-* 2) node server.js
+```
+npm install
+nano data/mysql/.env #enter the root password and the mysql password (password must be the same)
+docker compose up -d
+docker cp schema.sql mysql_database:/schema.sql
+docker exec -it mysql_database bash
+mysql -u root -p -e "CREATE DATABASE localflix;"
+mysql -u root -p localflix < schema.sql
+```
 
 ### Database
 The project uses a MySQL database.
@@ -40,9 +47,3 @@ Tables included (from schema.sql):
 * **movie**
 * **series**
 * **episodes**
-
-### Database Initialisation
-* 1) Enter the localflix and admin passwords inside data/mysql/.env
-* 2) docker compose up -d
-* 3) docker exec -it <your mysql docker name> bash
-* 4) mysql -u root -p localflix < data/mysql/schema.sql
