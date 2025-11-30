@@ -1,5 +1,6 @@
 ## LocalFlix
 
+![Localflix](localflix.png)
 A lightweight self-hosted media library for movies and series.
 
 LocalFlix allows you to store, view, and manage your personal video collection with a simple browser interface.
