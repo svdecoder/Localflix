@@ -39,6 +39,7 @@ async function dataParser () {
 function domInserter(dataArray, viewerType, divName) {
   for (let i = 0; i < dataArray.length; i++) {
     let thumbnail = dataArray[i][0];
+    thumbnail = String(thumbnail).replace(/ /g, "");
     let tags = dataArray[i][1];
     let title = dataArray[i][2];
     let identifier = dataArray[i][3];

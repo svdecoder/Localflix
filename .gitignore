@@ -1,9 +1,3 @@
-
-
-data/movies/*
-data/serie/*
-data/uploads/*
-data/thumbnail/*
 data/mysql/mysql-config/*
 data/mysql/mysql-data/*
 

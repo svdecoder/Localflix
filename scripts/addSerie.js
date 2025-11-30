@@ -25,6 +25,8 @@ export default async function addSerie(req) {
     function thumbnailHandling(req) {
         let filename = req.file.filename
         let title = req.body.title
+        function inputSanitize(input) {
+        String(filename).replace(/ /g, "");}
         fs.rename(`data/uploads/${filename}`, `data/thumbnail/${title}.jpg`, (err) => {
             if (err) throw err;
             console.log('file renamed')
