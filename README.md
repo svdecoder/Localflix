@@ -33,7 +33,8 @@ The project uses node JS to display the pages.
 ### Server initialization
 ```
 npm install
-nano data/mysql/.env #enter the root password and the mysql password (password must be the same)
+cd data/mysql
+nano .env #enter the root password and the mysql password (password must be the same)
 docker compose up -d
 docker cp schema.sql mysql_database:/schema.sql
 docker exec -it mysql_database bash
