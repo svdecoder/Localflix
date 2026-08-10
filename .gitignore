@@ -1,5 +1,31 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# MySQL data (Docker volumes)
 data/mysql/mysql-config/*
 data/mysql/mysql-data/*
 
-package-lock.json
-node_modules/
+# Environment files (contains secrets)
+data/mysql/.env
+.env
+
+# Uploaded/processed media (keep directory structure, ignore content)
+data/movies/*
+data/serie/*
+data/thumbnail/*
+data/uploads/*
+!data/movies/.gitkeep
+!data/serie/.gitkeep
+!data/thumbnail/.gitkeep
+!data/uploads/.gitkeep
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

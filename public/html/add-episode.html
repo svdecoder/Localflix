@@ -1,38 +1,285 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <title>Add an episode</title>
-        <link rel="icon" type="image/x-icon" href="/favicon.ico">
-        <link rel="stylesheet" href="/css/styles.css">
-    </head>
-    <body>
-        <div id="header">
-        </div>
-        <div class="add-form">
-        <form method="POST" enctype="multipart/form-data" action="/add-episode" name="add">
-            <label for="title">Episode title:</label><br>
-            <input type="text" id="title" name="title"><br><br>
+<html lang="en">
+<head>
+  <title>Add an Episode — Localflix</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div id="header"></div>
 
-            <label for="description">Description:</label><br><br>
-            <input type="text" id="description" name="description"><br><br>
+  <div class="add-form">
+    <h2 style="text-align:center; margin-bottom:24px; color:var(--text-primary);">Add an Episode</h2>
+    <form method="POST" enctype="multipart/form-data" action="/add-episode" name="add" id="episodeForm">
 
-            <label for="releaseDate">Release date (YYYY-MM-DD):</label><br><br>
-            <input type="text" id="releaseDate" name="releaseDate"><br><br>
+      <label for="title">Episode Title</label>
+      <input type="text" id="title" name="title" required>
 
-            <label for="season">Season:</label><br><br>
-            <input type="number" id="season" name="season" min="1"><br><br>
-            <label for="season">Episode:</label><br><br>
-            <input type="number" id="episod" name="episod" min="1" ><br><br>
+      <label for="description">Description</label>
+      <input type="text" id="description" name="description">
 
-            <label for="serieID">Serie ID:</label><br><br>
-            <input type="text" id="serieID" name="serieID"><br><br>
+      <label for="releaseDate">Release Date (YYYY-MM-DD)</label>
+      <input type="text" id="releaseDate" name="releaseDate" placeholder="2024-01-15">
 
-            <label for="episode">Episode file:</label><br><br>
-            <input type="file" accept="video/*" id="episode" name="episode">
+      <label for="season">Season Number</label>
+      <input type="number" id="season" name="season" min="1" required>
 
-            <input type="submit" value="Submit" class="btn-submit">
-        </form>
-        </div>
-        <script src="/js/header.js"></script>
-    </body>
+      <label for="episod">Episode Number</label>
+      <input type="number" id="episod" name="episod" min="1" required>
+
+      <label for="serieID">Series Identifier (exact title)</label>
+      <div class="autocomplete-wrapper">
+        <input type="text" id="serieID" name="serieID" required autocomplete="off" placeholder="Start typing a series title...">
+        <div class="autocomplete-dropdown" id="serieDropdown"></div>
+      </div>
+
+      <label for="quality">Output Quality</label>
+      <select id="quality" name="quality">
+        <option value="original">Original (no re-encode)</option>
+        <option value="1080p">1080p (Full HD)</option>
+        <option value="720p" selected>720p (HD)</option>
+        <option value="480p">480p (SD)</option>
+      </select>
+
+      <label for="episodeFile">Episode Video File</label>
+      <input type="file" accept="video/*" id="episodeFile">
+      <input type="hidden" id="stagedFile" name="stagedFile" value="">
+      <div class="upload-status" id="probeStatus"></div>
+
+      <div id="trackSelection" style="display:none;">
+        <label>Audio Tracks</label>
+        <div class="track-selection" id="audioTracks"></div>
+        <p class="track-hint">Select which audio tracks to keep. If none selected, all will be kept.</p>
+
+        <label>Subtitle Tracks</label>
+        <div class="track-selection" id="subtitleTracks"></div>
+        <p class="track-hint">Select which subtitle tracks to keep. If none selected, all will be kept.</p>
+      </div>
+
+      <label for="srtFiles">External Subtitles (.srt files)</label>
+      <input type="file" accept=".srt" id="srtFiles" multiple>
+      <div id="srtList" style="margin-bottom:16px;"></div>
+      <input type="hidden" id="srtStaged" name="srtStaged" value="">
+      <p class="track-hint">Upload .srt subtitle files to embed as selectable subtitle tracks.</p>
+
+      <div class="upload-status" id="uploadStatus"></div>
+
+      <input type="submit" value="Upload & Process Episode" class="btn-submit" id="submitBtn" disabled>
+    </form>
+  </div>
+
+  <script src="/js/header.js"></script>
+  <script>
+    const fileInput = document.getElementById("episodeFile");
+    const probeStatus = document.getElementById("probeStatus");
+    const trackDiv = document.getElementById("trackSelection");
+    const audioContainer = document.getElementById("audioTracks");
+    const subtitleContainer = document.getElementById("subtitleTracks");
+    const stagedInput = document.getElementById("stagedFile");
+    const submitBtn = document.getElementById("submitBtn");
+    const uploadStatus = document.getElementById("uploadStatus");
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    fileInput.addEventListener("change", async function () {
+      const file = this.files[0];
+      if (!file) return;
+
+      trackDiv.style.display = "none";
+      submitBtn.disabled = true;
+      stagedInput.value = "";
+      probeStatus.className = "upload-status active processing";
+      probeStatus.textContent = "Analyzing video with FFprobe...";
+
+      const formData = new FormData();
+      formData.append("video", file);
+
+      try {
+        const resp = await fetch("/api/probeUpload", { method: "POST", body: formData });
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.error || "Probe failed");
+        }
+        const data = await resp.json();
+
+        stagedInput.value = data.stagedFile;
+
+        const audioTracks = data.tracks.audio || [];
+        if (audioTracks.length > 0) {
+          audioContainer.innerHTML = audioTracks
+            .map((t) => {
+              const lang = t.language !== "und" ? t.language : "unknown";
+              const label = t.title || `Track #${t.index} (${t.codec}, ${t.channels}ch)`;
+              return `<label><input type="checkbox" name="audioTracks" value="${t.index}" checked> ${escapeHtml(label)} [${lang}]</label>`;
+            })
+            .join("");
+        } else {
+          audioContainer.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem;">No audio tracks detected — all will be kept</span>';
+        }
+
+        const subtitleTracks = data.tracks.subtitles || [];
+        if (subtitleTracks.length > 0) {
+          subtitleContainer.innerHTML = subtitleTracks
+            .map((t) => {
+              const lang = t.language !== "und" ? t.language : "unknown";
+              const label = t.title || `Track #${t.index} (${t.codec})`;
+              return `<label><input type="checkbox" name="subtitleTracks" value="${t.index}" checked> ${escapeHtml(label)} [${lang}]</label>`;
+            })
+            .join("");
+        } else {
+          subtitleContainer.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem;">No subtitle tracks detected</span>';
+        }
+
+        const videoInfo = data.tracks.video || [];
+        const vidStr = videoInfo.length > 0
+          ? `${videoInfo[0].width}x${videoInfo[0].height} (${videoInfo[0].codec})`
+          : "unknown";
+
+        probeStatus.className = "upload-status active success";
+        probeStatus.textContent = `Video analyzed: ${vidStr}, ${audioTracks.length} audio track(s), ${subtitleTracks.length} subtitle track(s). Select tracks below.`;
+
+        trackDiv.style.display = "block";
+        submitBtn.disabled = false;
+      } catch (err) {
+        probeStatus.className = "upload-status active error";
+        probeStatus.textContent = `Error: ${err.message}. Ensure FFmpeg is installed on the server.`;
+      }
+    });
+
+    // SRT subtitle upload
+    const srtInput = document.getElementById("srtFiles");
+    const srtList = document.getElementById("srtList");
+    const srtStaged = document.getElementById("srtStaged");
+    const stagedSrts = [];
+
+    srtInput.addEventListener("change", async function () {
+      const files = Array.from(this.files);
+      if (files.length === 0) return;
+
+      srtList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem;">Uploading subtitles...</span>';
+      stagedSrts.length = 0;
+
+      for (const file of files) {
+        if (!file.name.toLowerCase().endsWith(".srt")) continue;
+        const fd = new FormData();
+        fd.append("srt", file);
+        try {
+          const resp = await fetch("/api/uploadSrt", { method: "POST", body: fd });
+          if (!resp.ok) {
+            const err = await resp.json();
+            srtList.innerHTML += `<div style="color:var(--danger);font-size:0.85rem;">${escapeHtml(file.name)}: ${err.error}</div>`;
+            continue;
+          }
+          const data = await resp.json();
+          stagedSrts.push(data.srtFile + "|" + file.name.replace(/\.srt$/i, ""));
+          srtList.innerHTML += `<div style="color:var(--success);font-size:0.85rem;">✓ ${escapeHtml(file.name)}</div>`;
+        } catch (err) {
+          srtList.innerHTML += `<div style="color:var(--danger);font-size:0.85rem;">${escapeHtml(file.name)}: Upload failed</div>`;
+        }
+      }
+      srtStaged.value = stagedSrts.join(",");
+    });
+
+    // ===== Series Autocomplete =====
+    const serieInput = document.getElementById("serieID");
+    const serieDropdown = document.getElementById("serieDropdown");
+    let debounceTimer = null;
+    let selectedIndex = -1;
+
+    serieInput.addEventListener("input", function () {
+      clearTimeout(debounceTimer);
+      const query = this.value.trim();
+      if (query.length < 1) {
+        serieDropdown.classList.remove("visible");
+        return;
+      }
+      debounceTimer = setTimeout(async () => {
+        try {
+          const resp = await fetch(`/api/searchSeries?q=${encodeURIComponent(query)}`);
+          if (!resp.ok) throw new Error("Search failed");
+          const results = await resp.json();
+          renderDropdown(results);
+        } catch (err) {
+          console.error("Series search error:", err);
+          serieDropdown.classList.remove("visible");
+        }
+      }, 200);
+    });
+
+    function renderDropdown(results) {
+      selectedIndex = -1;
+      if (!results || results.length === 0) {
+        serieDropdown.innerHTML = '<div class="autocomplete-item no-results">No series found</div>';
+        serieDropdown.classList.add("visible");
+        return;
+      }
+      serieDropdown.innerHTML = results
+        .map((s, i) => {
+          const seasons = s.number_of_seasons ? `${s.number_of_seasons} season(s)` : "";
+          const author = s.author ? ` — ${escapeHtml(s.author)}` : "";
+          return `<div class="autocomplete-item" data-index="${i}" data-title="${escapeHtml(s.title)}">
+            <span class="autocomplete-title">${escapeHtml(s.title)}</span>
+            <span class="autocomplete-meta">${seasons}${author}</span>
+          </div>`;
+        })
+        .join("");
+      serieDropdown.classList.add("visible");
+
+      // Click handler on items
+      serieDropdown.querySelectorAll(".autocomplete-item[data-title]").forEach((item) => {
+        item.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          serieInput.value = item.dataset.title;
+          serieDropdown.classList.remove("visible");
+        });
+      });
+    }
+
+    // Keyboard navigation
+    serieInput.addEventListener("keydown", function (e) {
+      const items = serieDropdown.querySelectorAll(".autocomplete-item[data-title]");
+      if (!items.length || !serieDropdown.classList.contains("visible")) return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+        updateSelection(items);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        selectedIndex = Math.max(selectedIndex - 1, 0);
+        updateSelection(items);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (selectedIndex >= 0 && items[selectedIndex]) {
+          serieInput.value = items[selectedIndex].dataset.title;
+          serieDropdown.classList.remove("visible");
+        }
+      } else if (e.key === "Escape") {
+        serieDropdown.classList.remove("visible");
+      }
+    });
+
+    function updateSelection(items) {
+      items.forEach((item, i) => {
+        item.classList.toggle("selected", i === selectedIndex);
+      });
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener("click", function (e) {
+      if (!serieInput.contains(e.target) && !serieDropdown.contains(e.target)) {
+        serieDropdown.classList.remove("visible");
+      }
+    });
+
+    document.getElementById("episodeForm").addEventListener("submit", function () {
+      uploadStatus.className = "upload-status active processing";
+      uploadStatus.textContent = "Processing episode... This may take a while. You will be redirected when complete.";
+    });
+  </script>
+</body>
 </html>

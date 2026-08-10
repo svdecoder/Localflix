@@ -1,31 +1,194 @@
- <!DOCTYPE html>
-<html>
-    <hear>
-        <title>Add a movie</title>
-        <link rel="stylesheet" href="/css/styles.css">
-        <link rel="icon" type="image/x-icon" href="/favicon.ico">
-    </hear>
-    <body>
-        <div id="header">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Add a Movie — Localflix</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+</head>
+<body>
+  <div id="header"></div>
 
-        </div>
-        <div class="add-form">
-        <form method="POST" enctype="multipart/form-data" action="/add-movie" name="add">
-            <label for="title">Movie title:</label><br>
-            <input type="text" id="title" name="title"><br><br>
-            <label for="description">Description:</label><br><br>
-            <input type="text" id="description" name="description"><br><br>
-            <label for="tags">Tags:</label><br><br>
-            <input type="text" id="tags" name="tags"><br><br>
-            <label for="author">Author name:</label><br><br>
-            <input type="text" id="author" name="author"><br><br>
-            <label for="releaseDate">Release date (YYYY-MM-DD):</label><br><br>
-            <input type="text" id="releaseDate" name="releaseDate"><br><br>
-            <label for="movie">Movie:</label><br><br>
-            <input type="file" accept="video/*" id="movie" name="movie"><br><br>
-            <input type="submit" value="Submit" class="btn-submit">
-        </form>
-        </div>
-        <script src="/js/header.js"></script>
-    </body>
-</html> 
+  <div class="add-form">
+    <h2 style="text-align:center; margin-bottom:24px; color:var(--text-primary);">Add a Movie</h2>
+    <form method="POST" enctype="multipart/form-data" action="/add-movie" name="add" id="movieForm">
+
+      <label for="title">Movie Title</label>
+      <input type="text" id="title" name="title" required>
+
+      <label for="description">Description</label>
+      <input type="text" id="description" name="description">
+
+      <label for="tags">Tags (comma separated)</label>
+      <input type="text" id="tags" name="tags">
+
+      <label for="author">Author / Director</label>
+      <input type="text" id="author" name="author">
+
+      <label for="releaseDate">Release Date (YYYY-MM-DD)</label>
+      <input type="text" id="releaseDate" name="releaseDate" placeholder="2024-01-15">
+
+      <label for="quality">Output Quality</label>
+      <select id="quality" name="quality">
+        <option value="original">Original (no re-encode)</option>
+        <option value="1080p">1080p (Full HD)</option>
+        <option value="720p" selected>720p (HD)</option>
+        <option value="480p">480p (SD)</option>
+      </select>
+
+      <label for="movieFile">Video File</label>
+      <input type="file" accept="video/*" id="movieFile">
+      <input type="hidden" id="stagedFile" name="stagedFile" value="">
+      <div class="upload-status" id="probeStatus"></div>
+
+      <div id="trackSelection" style="display:none;">
+        <label>Audio Tracks</label>
+        <div class="track-selection" id="audioTracks"></div>
+        <p class="track-hint">Select which audio tracks to keep. If none selected, all will be kept.</p>
+
+        <label>Subtitle Tracks</label>
+        <div class="track-selection" id="subtitleTracks"></div>
+        <p class="track-hint">Select which subtitle tracks to keep. If none selected, all will be kept.</p>
+      </div>
+
+      <label for="srtFiles">External Subtitles (.srt files)</label>
+      <input type="file" accept=".srt" id="srtFiles" multiple>
+      <div id="srtList" style="margin-bottom:16px;"></div>
+      <input type="hidden" id="srtStaged" name="srtStaged" value="">
+      <p class="track-hint">Upload .srt subtitle files to embed as selectable subtitle tracks.</p>
+
+      <div class="upload-status" id="uploadStatus"></div>
+
+      <input type="submit" value="Upload & Process Movie" class="btn-submit" id="submitBtn" disabled>
+    </form>
+  </div>
+
+  <script src="/js/header.js"></script>
+  <script>
+    const fileInput = document.getElementById("movieFile");
+    const probeStatus = document.getElementById("probeStatus");
+    const trackDiv = document.getElementById("trackSelection");
+    const audioContainer = document.getElementById("audioTracks");
+    const subtitleContainer = document.getElementById("subtitleTracks");
+    const stagedInput = document.getElementById("stagedFile");
+    const submitBtn = document.getElementById("submitBtn");
+    const uploadStatus = document.getElementById("uploadStatus");
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    fileInput.addEventListener("change", async function () {
+      const file = this.files[0];
+      if (!file) return;
+
+      // Reset state
+      trackDiv.style.display = "none";
+      submitBtn.disabled = true;
+      stagedInput.value = "";
+      probeStatus.className = "upload-status active processing";
+      probeStatus.textContent = "Analyzing video with FFprobe...";
+
+      // Upload to probe endpoint
+      const formData = new FormData();
+      formData.append("video", file);
+
+      try {
+        const resp = await fetch("/api/probeUpload", { method: "POST", body: formData });
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.error || "Probe failed");
+        }
+        const data = await resp.json();
+
+        // Store staged file reference
+        stagedInput.value = data.stagedFile;
+
+        // Populate audio tracks
+        const audioTracks = data.tracks.audio || [];
+        if (audioTracks.length > 0) {
+          audioContainer.innerHTML = audioTracks
+            .map((t) => {
+              const lang = t.language !== "und" ? t.language : "unknown";
+              const label = t.title || `Track #${t.index} (${t.codec}, ${t.channels}ch)`;
+              return `<label><input type="checkbox" name="audioTracks" value="${t.index}" checked> ${escapeHtml(label)} [${lang}]</label>`;
+            })
+            .join("");
+        } else {
+          audioContainer.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem;">No audio tracks detected — all will be kept</span>';
+        }
+
+        // Populate subtitle tracks
+        const subtitleTracks = data.tracks.subtitles || [];
+        if (subtitleTracks.length > 0) {
+          subtitleContainer.innerHTML = subtitleTracks
+            .map((t) => {
+              const lang = t.language !== "und" ? t.language : "unknown";
+              const label = t.title || `Track #${t.index} (${t.codec})`;
+              return `<label><input type="checkbox" name="subtitleTracks" value="${t.index}" checked> ${escapeHtml(label)} [${lang}]</label>`;
+            })
+            .join("");
+        } else {
+          subtitleContainer.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem;">No subtitle tracks detected</span>';
+        }
+
+        // Show video info
+        const videoInfo = data.tracks.video || [];
+        const vidStr = videoInfo.length > 0
+          ? `${videoInfo[0].width}x${videoInfo[0].height} (${videoInfo[0].codec})`
+          : "unknown";
+
+        probeStatus.className = "upload-status active success";
+        probeStatus.textContent = `Video analyzed: ${vidStr}, ${audioTracks.length} audio track(s), ${subtitleTracks.length} subtitle track(s). Select tracks below.`;
+
+        trackDiv.style.display = "block";
+        submitBtn.disabled = false;
+      } catch (err) {
+        probeStatus.className = "upload-status active error";
+        probeStatus.textContent = `Error: ${err.message}. Ensure FFmpeg is installed on the server.`;
+      }
+    });
+
+    // SRT subtitle upload
+    const srtInput = document.getElementById("srtFiles");
+    const srtList = document.getElementById("srtList");
+    const srtStaged = document.getElementById("srtStaged");
+    const stagedSrts = [];
+
+    srtInput.addEventListener("change", async function () {
+      const files = Array.from(this.files);
+      if (files.length === 0) return;
+
+      srtList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem;">Uploading subtitles...</span>';
+      stagedSrts.length = 0;
+
+      for (const file of files) {
+        if (!file.name.toLowerCase().endsWith(".srt")) continue;
+        const fd = new FormData();
+        fd.append("srt", file);
+        try {
+          const resp = await fetch("/api/uploadSrt", { method: "POST", body: fd });
+          if (!resp.ok) {
+            const err = await resp.json();
+            srtList.innerHTML += `<div style="color:var(--danger);font-size:0.85rem;">${escapeHtml(file.name)}: ${err.error}</div>`;
+            continue;
+          }
+          const data = await resp.json();
+          stagedSrts.push(data.srtFile + "|" + file.name.replace(/\.srt$/i, ""));
+          srtList.innerHTML += `<div style="color:var(--success);font-size:0.85rem;">✓ ${escapeHtml(file.name)}</div>`;
+        } catch (err) {
+          srtList.innerHTML += `<div style="color:var(--danger);font-size:0.85rem;">${escapeHtml(file.name)}: Upload failed</div>`;
+        }
+      }
+      srtStaged.value = stagedSrts.join(",");
+    });
+
+    // Show processing status on submit
+    document.getElementById("movieForm").addEventListener("submit", function () {
+      uploadStatus.className = "upload-status active processing";
+      uploadStatus.textContent = "Processing video... This may take a while depending on file size and quality settings. You will be redirected when complete.";
+    });
+  </script>
+</body>
+</html>

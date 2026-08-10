@@ -18,7 +18,8 @@ async function dataParser () {
     for (let i=0; i < dataArray[0].length; i++) {
       data = [];
       let dataObject = dataArray[0][i];
-      data.push(`/data/thumbnail/${dataObject.id}.jpg`);
+      const tid = dataObject.id.replace(/\s+/g, "");
+      data.push(`/data/thumbnail/${tid}.jpg`);
       data.push(dataObject.tags);
       data.push(dataObject.title);
       data.push(dataObject.id);
@@ -27,7 +28,8 @@ async function dataParser () {
     for (let i=0; i < dataArray[1].length; i++) {
       data = [];
       let dataObject = dataArray[1][i];
-      data.push(`/data/thumbnail/${dataObject.id}.jpg`);
+      const tid = dataObject.id.replace(/\s+/g, "");
+      data.push(`/data/thumbnail/${tid}.jpg`);
       data.push(dataObject.tags);
       data.push(dataObject.title);
       data.push(dataObject.id);

@@ -1,32 +1,42 @@
- <!DOCTYPE html>
-<html>
-    <hear>
-        <title>Add a serie</title>
-        <link rel="stylesheet" href="/css/styles.css">
-        <link rel="icon" type="image/x-icon" href="/favicon.ico">
-    </hear>
-    <body>
-        <div id="header">
-        </div>
-        <div class="add-form">
-        <form method="POST" enctype="multipart/form-data" action="/add-serie" name="add">
-            <label for="title">Serie title:</label><br>
-            <input type="text" id="title" name="title"><br><br>
-            <label for="description">Description:</label><br><br>
-            <input type="text" id="description" name="description"><br><br>
-            <label for="tags">Tags:</label><br><br>
-            <input type="text" id="tags" name="tags"><br><br>
-            <label for="author">Author name:</label><br><br>
-            <input type="text" id="author" name="author"><br><br>
-            <label for="NoS">Number of seasons:</label><br><br>
-            <input type="number" id="NoS" name="NoS" min="1"><br><br>
-            <label for="releaseDate">Release date (YYYY-MM-DD):</label><br><br>
-            <input type="text" id="releaseDate" name="releaseDate"><br><br>
-            <label for="Image">Thumbnail of the serie:</label><br><br>
-            <input type="file" accept="image/*" id="image" name="image"><br><br>
-            <input type="submit" value="Submit" class="btn-submit">
-        </form>
-        </div>
-        <script src="/js/header.js"></script>
-    </body>
-</html> 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Add a Series — Localflix</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+</head>
+<body>
+  <div id="header"></div>
+
+  <div class="add-form">
+    <h2 style="text-align:center; margin-bottom:24px; color:var(--text-primary);">Add a Series</h2>
+    <form method="POST" enctype="multipart/form-data" action="/add-serie" name="add">
+
+      <label for="title">Series Title</label>
+      <input type="text" id="title" name="title" required>
+
+      <label for="description">Description</label>
+      <input type="text" id="description" name="description">
+
+      <label for="tags">Tags (comma separated)</label>
+      <input type="text" id="tags" name="tags">
+
+      <label for="author">Author / Creator</label>
+      <input type="text" id="author" name="author">
+
+      <label for="NoS">Number of Seasons</label>
+      <input type="number" id="NoS" name="NoS" min="1" required>
+
+      <label for="releaseDate">Release Date (YYYY-MM-DD)</label>
+      <input type="text" id="releaseDate" name="releaseDate" placeholder="2024-01-15">
+
+      <label for="image">Thumbnail Image</label>
+      <input type="file" accept="image/*" id="image" name="image">
+
+      <input type="submit" value="Create Series" class="btn-submit">
+    </form>
+  </div>
+
+  <script src="/js/header.js"></script>
+</body>
+</html>

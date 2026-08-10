@@ -1,0 +1,42 @@
+services:
+  db:
+    image: mysql:8.3
+    container_name: localflix_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-localflix}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./data/mysql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    build: .
+    container_name: localflix_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: db
+      DATABASE: ${MYSQL_DATABASE:-localflix}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ./data/movies:/app/data/movies
+      - ./data/serie:/app/data/serie
+      - ./data/thumbnail:/app/data/thumbnail
+      - ./data/uploads:/app/data/uploads
+      - ./.env:/app/data/mysql/.env:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  mysql_data:

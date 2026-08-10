@@ -45,4 +45,30 @@ async function handler() {
   }
 }
 
-handler()
+handler();
+
+// Delete Series button
+const deleteBtn = document.getElementById("deleteSerieBtn");
+if (deleteBtn) {
+  deleteBtn.addEventListener("click", async () => {
+    const title = new URLSearchParams(window.location.search).get("id");
+    if (!title) return;
+    if (!confirm(`Are you sure you want to delete "${title}" and ALL its episodes? This cannot be undone.`)) return;
+
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = "Deleting...";
+
+    try {
+      const resp = await fetch(`/api/serie/${encodeURIComponent(title)}`, { method: "DELETE" });
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.error || "Delete failed");
+      }
+      window.location.href = "/";
+    } catch (err) {
+      alert("Failed to delete series: " + err.message);
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = "Delete Series";
+    }
+  });
+}

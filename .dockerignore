@@ -1,0 +1,17 @@
+node_modules/
+npm-debug.log
+.git
+.gitignore
+*.md
+LICENSE
+localflix.png
+data/movies/*
+data/serie/*
+data/thumbnail/*
+data/uploads/*
+data/mysql/mysql-data/
+data/mysql/mysql-config/
+data/mysql/.env
+docker-compose.yml
+Dockerfile
+.dockerignore
