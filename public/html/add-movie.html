@@ -88,19 +88,57 @@
       submitBtn.disabled = true;
       stagedInput.value = "";
       probeStatus.className = "upload-status active processing";
-      probeStatus.textContent = "Analyzing video with FFprobe...";
-
-      // Upload to probe endpoint
-      const formData = new FormData();
-      formData.append("video", file);
+      probeStatus.textContent = "Uploading video in chunks...";
 
       try {
-        const resp = await fetch("/api/probeUpload", { method: "POST", body: formData });
-        if (!resp.ok) {
-          const err = await resp.json();
-          throw new Error(err.error || "Probe failed");
+        // Chunked upload: 25MB per chunk (safe under Cloudflare 100MB limit)
+        const CHUNK_SIZE = 25 * 1024 * 1024; // 25 MB
+        const uploadId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+        probeStatus.textContent = `Uploading ${totalChunks} chunk(s)...`;
+
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunk = file.slice(start, end);
+
+          const resp = await fetch("/api/chunkUpload", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "x-upload-id": uploadId,
+              "x-chunk-index": String(i),
+              "x-total-chunks": String(totalChunks),
+              "x-original-name": encodeURIComponent(file.name),
+            },
+            body: chunk,
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: "Chunk upload failed" }));
+            throw new Error(err.error || "Chunk upload failed");
+          }
+
+          const pct = Math.round(((i + 1) / totalChunks) * 100);
+          probeStatus.textContent = `Uploading... ${pct}% (chunk ${i + 1}/${totalChunks})`;
         }
-        const data = await resp.json();
+
+        // Assemble and probe
+        probeStatus.className = "upload-status active processing";
+        probeStatus.textContent = "Assembling and analyzing video...";
+
+        const assembleResp = await fetch("/api/chunkAssemble", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uploadId, originalName: file.name }),
+        });
+
+        if (!assembleResp.ok) {
+          const err = await assembleResp.json().catch(() => ({ error: "Assembly failed" }));
+          throw new Error(err.error || "Assembly failed");
+        }
+        const data = await assembleResp.json();
 
         // Store staged file reference
         stagedInput.value = data.stagedFile;

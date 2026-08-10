@@ -29,7 +29,6 @@ app.use(express.urlencoded({ extended: true }));
 
 // Video streaming with range request support (enables seeking)
 function streamVideo(req, res, filePath) {
-  // Prevent path traversal
   const normalized = path.normalize(filePath);
   if (normalized.includes("..")) {
     console.error(`[Stream] Path traversal blocked: ${filePath}`);
@@ -141,11 +140,9 @@ app.delete("/api/movie/:id", async (req, res) => {
   const thumbnailPath = path.join(__dirname, "data", "thumbnail", `${id}.jpg`);
 
   try {
-    // Delete files if they exist
-    try { fs.unlinkSync(moviePath); } catch (_) { /* file may not exist */ }
-    try { fs.unlinkSync(thumbnailPath); } catch (_) { /* file may not exist */ }
+    try { fs.unlinkSync(moviePath); } catch (_) {}
+    try { fs.unlinkSync(thumbnailPath); } catch (_) {}
 
-    // Delete from database
     const mysql = await import("mysql2");
     const dotenv = await import("dotenv");
     dotenv.config({ path: path.join(__dirname, "data", "mysql", ".env") });
@@ -246,11 +243,9 @@ app.delete("/api/serie/:title", async (req, res) => {
   const thumbnailPath = path.join(__dirname, "data", "thumbnail", `${title.replace(/\s+/g, "")}.jpg`);
 
   try {
-    // Delete files
     try { fs.rmSync(serieFolder, { recursive: true, force: true }); } catch (_) {}
     try { fs.unlinkSync(thumbnailPath); } catch (_) {}
 
-    // Delete from database
     const mysql = await import("mysql2");
     const dotenv = await import("dotenv");
     dotenv.config({ path: path.join(__dirname, "data", "mysql", ".env") });
@@ -265,7 +260,6 @@ app.delete("/api/serie/:title", async (req, res) => {
     await new Promise((resolve, reject) => {
       con.connect((err) => {
         if (err) { con.end(); return reject(err); }
-        // Delete episodes first (foreign key), then series
         con.query("DELETE FROM episodes WHERE serie_id = ?", [title], (err) => {
           if (err) { con.end(); return reject(err); }
           con.query("DELETE FROM series WHERE title = ?", [title], (err, result) => {
@@ -327,27 +321,95 @@ app.get("/api/videoTracks", async (req, res) => {
   }
 });
 
-// Upload probe endpoint: accepts a file, probes it with ffprobe, returns track info
-// The file is kept staged so the final processing can reference it
-const probeUpload = multer({ dest: "data/uploads" });
-app.post("/api/probeUpload", probeUpload.single("video"), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+// ===== Chunked Upload System =====
+// Solves Cloudflare 100MB limit by splitting uploads into 25MB chunks
+
+// Receive a single chunk (raw binary, 25MB max)
+app.post("/api/chunkUpload", express.raw({ type: "application/octet-stream", limit: "30mb" }), (req, res) => {
+  const uploadId = req.headers["x-upload-id"];
+  const chunkIndex = parseInt(req.headers["x-chunk-index"], 10);
+  const totalChunks = parseInt(req.headers["x-total-chunks"], 10);
+  const originalName = req.headers["x-original-name"] || "video";
+
+  if (!uploadId || isNaN(chunkIndex) || isNaN(totalChunks)) {
+    return res.status(400).json({ error: "Missing chunk headers: x-upload-id, x-chunk-index, x-total-chunks" });
+  }
+
+  const chunkDir = path.join(__dirname, "data", "uploads", uploadId);
+  try { fs.mkdirSync(chunkDir, { recursive: true }); } catch (_) {}
+
+  const chunkPath = path.join(chunkDir, `chunk_${String(chunkIndex).padStart(6, "0")}`);
   try {
-    const tracks = await getVideoTracks(req.file.path);
-    // Return track info along with the staged file path (temp ID)
-    res.json({
-      stagedFile: req.file.filename,
-      tracks,
-    });
+    fs.writeFileSync(chunkPath, req.body);
+    console.log(`[Chunk] Received ${uploadId} chunk ${chunkIndex + 1}/${totalChunks} (${(req.body.length / 1024 / 1024).toFixed(1)} MB)`);
+    res.json({ ok: true, chunk: chunkIndex, received: req.body.length });
   } catch (err) {
-    console.error("Error probing upload:", err);
-    // Clean up on failure
-    try { fs.unlinkSync(req.file.path); } catch (_) {}
-    res.status(500).json({ error: "Failed to probe video file. Ensure FFmpeg is installed." });
+    console.error("Error writing chunk:", err);
+    res.status(500).json({ error: "Failed to write chunk" });
   }
 });
 
-// SRT subtitle upload endpoint: stages an .srt file for embedding
+// Assemble all chunks into final file, then probe it
+app.post("/api/chunkAssemble", express.json(), async (req, res) => {
+  const { uploadId, originalName } = req.body;
+  if (!uploadId) return res.status(400).json({ error: "Missing uploadId" });
+
+  const chunkDir = path.join(__dirname, "data", "uploads", uploadId);
+  if (!fs.existsSync(chunkDir)) {
+    return res.status(404).json({ error: "No chunks found for this upload ID" });
+  }
+
+  // Use a temp path for assembly to avoid name collision with chunk dir
+  const stagedName = uploadId;
+  const destPath = path.join(__dirname, "data", "uploads", stagedName);
+
+  try {
+    // Read all chunks sorted by index
+    const chunkFiles = fs.readdirSync(chunkDir)
+      .filter(f => f.startsWith("chunk_"))
+      .sort();
+
+    if (chunkFiles.length === 0) {
+      return res.status(400).json({ error: "No chunks to assemble" });
+    }
+
+    // Write to a temp file first (avoids EISDIR collision with chunk dir)
+    const tmpPath = destPath + ".assembling";
+    const fd = fs.openSync(tmpPath, "w");
+    for (const chunkFile of chunkFiles) {
+      const data = fs.readFileSync(path.join(chunkDir, chunkFile));
+      fs.writeSync(fd, data);
+    }
+    fs.closeSync(fd);
+
+    // Clean up chunk directory, then rename temp to final path
+    try { fs.rmSync(chunkDir, { recursive: true, force: true }); } catch (_) {}
+    try { fs.renameSync(tmpPath, destPath); } catch (_) {}
+
+    const fileSize = fs.statSync(destPath).size;
+    console.log(`[Chunk] Assembled ${uploadId}: ${(fileSize / 1024 / 1024).toFixed(1)} MB from ${chunkFiles.length} chunks`);
+
+    // Probe the assembled file
+    try {
+      const tracks = await getVideoTracks(destPath);
+      res.json({
+        stagedFile: stagedName,
+        tracks,
+        size: fileSize,
+      });
+    } catch (probeErr) {
+      console.error("Error probing assembled file:", probeErr);
+      try { fs.unlinkSync(destPath); } catch (_) {}
+      res.status(500).json({ error: "Failed to probe video file. Ensure FFmpeg is installed." });
+    }
+  } catch (err) {
+    console.error("Error assembling chunks:", err);
+    try { fs.unlinkSync(destPath); } catch (_) {}
+    res.status(500).json({ error: "Failed to assemble chunks" });
+  }
+});
+
+// SRT subtitle upload endpoint
 const srtUpload = multer({
   dest: "data/uploads",
   fileFilter: (_req, file, cb) => {
@@ -360,7 +422,6 @@ const srtUpload = multer({
 });
 app.post("/api/uploadSrt", srtUpload.single("srt"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No SRT file uploaded" });
-  // Validate it's actually an SRT by checking first line for timestamp pattern
   try {
     const content = fs.readFileSync(req.file.path, "utf-8").slice(0, 200);
     if (!/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/.test(content)) {
