@@ -18,6 +18,7 @@ import search from "./scripts/search.js";
 import addSerie from "./scripts/addSerie.js";
 import addEpisodeHandler from "./scripts/addEpisode.js";
 import { getVideoTracks } from "./scripts/videoProbe.js";
+import dbConfig from "./scripts/dbConfig.js";
 import fs from "fs";
 
 const app = express();
@@ -144,14 +145,12 @@ app.delete("/api/movie/:id", async (req, res) => {
     try { fs.unlinkSync(thumbnailPath); } catch (_) {}
 
     const mysql = await import("mysql2");
-    const dotenv = await import("dotenv");
-    dotenv.config({ path: path.join(__dirname, "data", "mysql", ".env") });
 
     const con = mysql.createConnection({
-      host: process.env.HOST,
+      host: dbConfig.host,
       user: "root",
-      password: process.env.MYSQL_PASSWORD,
-      database: process.env.DATABASE,
+      password: dbConfig.password,
+      database: dbConfig.database,
     });
 
     await new Promise((resolve, reject) => {
@@ -191,14 +190,12 @@ app.get("/api/searchSeries", async (req, res) => {
   if (!q || q.length < 1) return res.json([]);
   try {
     const mysql = await import("mysql2");
-    const dotenv = await import("dotenv");
-    dotenv.config({ path: path.join(__dirname, "data", "mysql", ".env") });
 
     const con = mysql.createConnection({
-      host: process.env.HOST,
+      host: dbConfig.host,
       user: "root",
-      password: process.env.MYSQL_PASSWORD,
-      database: process.env.DATABASE,
+      password: dbConfig.password,
+      database: dbConfig.database,
     });
 
     const results = await new Promise((resolve, reject) => {
@@ -247,14 +244,12 @@ app.delete("/api/serie/:title", async (req, res) => {
     try { fs.unlinkSync(thumbnailPath); } catch (_) {}
 
     const mysql = await import("mysql2");
-    const dotenv = await import("dotenv");
-    dotenv.config({ path: path.join(__dirname, "data", "mysql", ".env") });
 
     const con = mysql.createConnection({
-      host: process.env.HOST,
+      host: dbConfig.host,
       user: "root",
-      password: process.env.MYSQL_PASSWORD,
-      database: process.env.DATABASE,
+      password: dbConfig.password,
+      database: dbConfig.database,
     });
 
     await new Promise((resolve, reject) => {

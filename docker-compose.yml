@@ -24,16 +24,13 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      HOST: db
-      DATABASE: ${MYSQL_DATABASE:-localflix}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    env_file:
+      - .env
     volumes:
       - ./data/movies:/app/data/movies
       - ./data/serie:/app/data/serie
       - ./data/thumbnail:/app/data/thumbnail
       - ./data/uploads:/app/data/uploads
-      - ./.env:/app/data/mysql/.env:ro
     depends_on:
       db:
         condition: service_healthy
