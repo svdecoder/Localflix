@@ -80,10 +80,19 @@ export default async function addMovieHandler(req) {
     // Always use explicit stream mapping — never rely on ffmpeg defaults
     const mapOpts = ["-map", "0:v:0?"];
 
-    // Audio mapping
+    // Audio mapping — selectedAudioIndexes are ABSOLUTE stream indices from ffprobe.
+    // We need to convert them to RELATIVE audio indices for ffmpeg -map.
+    const streams = probeData?.streams || [];
+    const audioStreams = streams.filter(s => s.codec_type === "audio");
+    const subStreams = streams.filter(s => s.codec_type === "subtitle");
+
     if (selectedAudioIndexes.length > 0) {
-      for (const idx of selectedAudioIndexes) {
-        mapOpts.push("-map", `0:a:${idx}?`);
+      for (const absIdx of selectedAudioIndexes) {
+        // Find the relative position of this absolute index among audio streams
+        const relIdx = audioStreams.findIndex(s => s.index === absIdx);
+        if (relIdx >= 0) {
+          mapOpts.push("-map", `0:a:${relIdx}?`);
+        }
       }
     } else {
       mapOpts.push("-map", "0:a?");
@@ -93,22 +102,17 @@ export default async function addMovieHandler(req) {
     const textSubCodecs = ["subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text", "sami", "jacosub", "microdvd", "mpl2", "pjs", "realtext", "stl", "subviewer", "subviewer1", "vplayer", "dvb_subtitle"];
     let textSubCount = 0;
     if (selectedSubtitleIndexes.length > 0) {
-      const streams = probeData?.streams || [];
-      for (const idx of selectedSubtitleIndexes) {
-        // Find the absolute stream index for this relative subtitle index
-        let subRelIdx = 0;
-        let subStream = null;
-        for (const s of streams) {
-          if (s.codec_type === "subtitle") {
-            if (subRelIdx === idx) { subStream = s; break; }
-            subRelIdx++;
+      for (const absIdx of selectedSubtitleIndexes) {
+        // Find the relative position of this absolute index among subtitle streams
+        const relIdx = subStreams.findIndex(s => s.index === absIdx);
+        if (relIdx >= 0) {
+          const subStream = subStreams[relIdx];
+          if (textSubCodecs.includes(subStream.codec_name)) {
+            mapOpts.push("-map", `0:s:${relIdx}?`);
+            textSubCount++;
+          } else {
+            console.log(`[FFmpeg] Skipping bitmap subtitle #${absIdx} (${subStream.codec_name}) — cannot convert to mov_text`);
           }
-        }
-        if (subStream && textSubCodecs.includes(subStream.codec_name)) {
-          mapOpts.push("-map", `0:s:${idx}?`);
-          textSubCount++;
-        } else {
-          console.log(`[FFmpeg] Skipping bitmap subtitle #${idx} (${subStream?.codec_name || "unknown"}) — cannot convert to mov_text`);
         }
       }
     }

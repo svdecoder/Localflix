@@ -62,6 +62,14 @@ export default async function addEpisodeHandler(req) {
     }
   }
 
+  // Probe the file to get stream info (needed for absolute→relative index conversion)
+  const probeData = await new Promise((res) => {
+    ffmpeg.ffprobe(uploadedFilePath, (err, meta) => {
+      if (err) { res(null); return; }
+      res(meta);
+    });
+  });
+
   // Build ffmpeg command
   await new Promise((resolve, reject) => {
     const cmd = ffmpeg(uploadedFilePath);
@@ -74,10 +82,18 @@ export default async function addEpisodeHandler(req) {
     // Always use explicit stream mapping — never rely on ffmpeg defaults
     const mapOpts = ["-map", "0:v:0?"];
 
-    // Audio mapping
+    // Audio mapping — selectedAudioIndexes are ABSOLUTE stream indices from ffprobe.
+    // We need to convert them to RELATIVE audio indices for ffmpeg -map.
+    const streams = probeData?.streams || [];
+    const audioStreams = streams.filter(s => s.codec_type === "audio");
+    const subStreams = streams.filter(s => s.codec_type === "subtitle");
+
     if (selectedAudioIndexes.length > 0) {
-      for (const idx of selectedAudioIndexes) {
-        mapOpts.push("-map", `0:a:${idx}?`);
+      for (const absIdx of selectedAudioIndexes) {
+        const relIdx = audioStreams.findIndex(s => s.index === absIdx);
+        if (relIdx >= 0) {
+          mapOpts.push("-map", `0:a:${relIdx}?`);
+        }
       }
     } else {
       mapOpts.push("-map", "0:a?");
@@ -85,8 +101,11 @@ export default async function addEpisodeHandler(req) {
 
     // Embedded subtitle mapping
     if (selectedSubtitleIndexes.length > 0) {
-      for (const idx of selectedSubtitleIndexes) {
-        mapOpts.push("-map", `0:s:${idx}?`);
+      for (const absIdx of selectedSubtitleIndexes) {
+        const relIdx = subStreams.findIndex(s => s.index === absIdx);
+        if (relIdx >= 0) {
+          mapOpts.push("-map", `0:s:${relIdx}?`);
+        }
       }
     }
 
