@@ -129,7 +129,7 @@ function escapeHtml(str) {
 function renderTags(tags) {
   if (!tags || tags === "None") return '<span class="value">None</span>';
   return `<span class="tag-list">` + String(tags)
-    .split(/\s+/)
+    .split(",")
     .map(t => t.trim())
     .filter(t => t.length > 0)
     .map(t => `<span class="tag-bubble">${escapeHtml(t)}</span>`)

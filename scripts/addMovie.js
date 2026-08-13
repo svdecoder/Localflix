@@ -205,7 +205,7 @@ async function databaseAdd(req, identifiers, newMovie) {
   const author = inputSanitize(req.body.author);
   const releaseDate = inputSanitize(req.body.releaseDate);
   const description = inputSanitize(req.body.description);
-  const tags = inputSanitize(req.body.tags);
+  const tags = String(req.body.tags).replace(/[^A-Za-z0-9._\- ,]+/g, "");
 
   const durationSeconds = await new Promise((resolve, reject) => {
     ffmpeg.ffprobe(newMovie, (err, metadata) => {

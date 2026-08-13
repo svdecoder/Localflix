@@ -20,7 +20,7 @@ function formHandling() {
 function renderTags(tags) {
     if (!tags) return "";
     return `<span class="tag-list">` + String(tags)
-        .split(/\s+/)
+        .split(",")
         .map(t => t.trim())
         .filter(t => t.length > 0)
         .map(t => `<span class="tag-bubble">${t}</span>`)

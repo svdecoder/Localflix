@@ -41,7 +41,7 @@ async function databaseAdd(req) {
   const description = inputSanitize(req.body.description);
   const releaseDate = inputSanitize(req.body.releaseDate);
   const author = inputSanitize(req.body.author);
-  const tags = inputSanitize(req.body.tags);
+  const tags = String(req.body.tags).replace(/[^A-Za-z0-9._\- ,]+/g, "");
   const NoS = inputSanitize(req.body.NoS);
 
   const con = mysql.createConnection({
