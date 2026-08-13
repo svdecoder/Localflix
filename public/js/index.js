@@ -38,6 +38,16 @@ async function dataParser () {
     return [serieData, videoData];
 };
 
+function renderTags(tags) {
+  if (!tags) return "";
+  return `<span class="tag-list">` + String(tags)
+    .split(",")
+    .map(t => t.trim())
+    .filter(t => t.length > 0)
+    .map(t => `<span class="tag-bubble">${t}</span>`)
+    .join("") + `</span>`;
+}
+
 function domInserter(dataArray, viewerType, divName) {
   for (let i = 0; i < dataArray.length; i++) {
     let thumbnail = dataArray[i][0];
@@ -50,7 +60,7 @@ function domInserter(dataArray, viewerType, divName) {
     <button class="elementVideo">
       <img src=${thumbnail} onerror="this.onerror=null; this.src='api/images/default_thumbnail.jpg';" class="videoButtonImage"><br>
       <span class="title">${title}</span><br>
-      <span class="tag">${tags}</span>
+      ${renderTags(tags)}
     </button>
     </a>`
   }

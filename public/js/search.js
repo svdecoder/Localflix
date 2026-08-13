@@ -17,6 +17,16 @@ function formHandling() {
     return apiRequest(specifications, request);
 }
 
+function renderTags(tags) {
+    if (!tags) return "";
+    return `<span class="tag-list">` + String(tags)
+        .split(",")
+        .map(t => t.trim())
+        .filter(t => t.length > 0)
+        .map(t => `<span class="tag-bubble">${t}</span>`)
+        .join("") + `</span>`;
+}
+
 async function resultInserter() {
     const data = await formHandling();
     console.log(data);
@@ -39,7 +49,7 @@ async function resultInserter() {
                 <div class="title">Title: ${title}</div>
                 <div class="description">Description: ${description}</div>
                 <div class="author">Author: ${author}</div>
-                <div class="tag">Tags: ${tags}</div>
+                <div class="tag">Tags: ${renderTags(tags)}</div>
                 </div>
             </a>
         </div>`;

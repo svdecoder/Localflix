@@ -106,7 +106,7 @@ async function domInserter() {
         <div class="info-row"><span class="preceding-info">Author</span><span class="value">${escapeHtml(movie.author || "Unknown")}</span></div>
         <div class="info-row"><span class="preceding-info">Duration</span><span class="value">${formatDuration(movie.length_minutes)}</span></div>
         <div class="info-row"><span class="preceding-info">Released</span><span class="value">${formatDate(movie.release_date)}</span></div>
-        <div class="info-row"><span class="preceding-info">Tags</span><span class="value">${escapeHtml(movie.tags || "None")}</span></div>
+        <div class="info-row"><span class="preceding-info">Tags</span>${renderTags(movie.tags)}</div>
       </div>
       <div class="info-description">
         <span class="preceding-info">Description</span>
@@ -124,6 +124,16 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+function renderTags(tags) {
+  if (!tags || tags === "None") return '<span class="value">None</span>';
+  return `<span class="tag-list">` + String(tags)
+    .split(",")
+    .map(t => t.trim())
+    .filter(t => t.length > 0)
+    .map(t => `<span class="tag-bubble">${escapeHtml(t)}</span>`)
+    .join("") + `</span>`;
 }
 
 function initVideoControls(movieId) {
