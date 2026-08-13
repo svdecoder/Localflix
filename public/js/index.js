@@ -41,7 +41,7 @@ async function dataParser () {
 function renderTags(tags) {
   if (!tags) return "";
   return `<span class="tag-list">` + String(tags)
-    .split(",")
+    .split(/\s+/)
     .map(t => t.trim())
     .filter(t => t.length > 0)
     .map(t => `<span class="tag-bubble">${t}</span>`)
