@@ -143,23 +143,155 @@ async function domInserter() {
 
   // Movie info
   document.getElementById("videoInformation").innerHTML = `
-    <div class="videoInformations">
-      <h2 class="movie-title">${escapeHtml(movie.title)}</h2>
-      <div class="info-grid">
-        <div class="info-row"><span class="preceding-info">Author</span><span class="value">${escapeHtml(movie.author || "Unknown")}</span></div>
-        <div class="info-row"><span class="preceding-info">Duration</span><span class="value">${formatDuration(movie.length_minutes)}</span></div>
-        <div class="info-row"><span class="preceding-info">Released</span><span class="value">${formatDate(movie.release_date)}</span></div>
-        <div class="info-row"><span class="preceding-info">Tags</span>${renderTags(movie.tags)}</div>
+    <div class="videoInformations" id="movieInfoContainer">
+      <div class="info-header">
+        <h2 class="movie-title">${escapeHtml(movie.title)}</h2>
+        <button id="editMovieBtn" class="btn-edit" title="Edit movie information">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          Edit
+        </button>
       </div>
-      <div class="info-description">
-        <span class="preceding-info">Description</span>
-        <p>${escapeHtml(movie.description || "No description")}</p>
+      <div id="movieInfoDisplay">
+        <div class="info-grid">
+          <div class="info-row"><span class="preceding-info">Author</span><span class="value">${escapeHtml(movie.author || "Unknown")}</span></div>
+          <div class="info-row"><span class="preceding-info">Duration</span><span class="value">${formatDuration(movie.length_minutes)}</span></div>
+          <div class="info-row"><span class="preceding-info">Released</span><span class="value">${formatDate(movie.release_date)}</span></div>
+          <div class="info-row"><span class="preceding-info">Tags</span>${renderTags(movie.tags)}</div>
+        </div>
+        <div class="info-description">
+          <span class="preceding-info">Description</span>
+          <p>${escapeHtml(movie.description || "No description")}</p>
+        </div>
       </div>
     </div>
   `;
 
+  // Initialize edit functionality
+  initMovieEdit(movie, id);
+
   // Initialize custom controls
   initVideoControls(id);
+}
+
+function initMovieEdit(movie, id) {
+  const editBtn = document.getElementById("editMovieBtn");
+  const container = document.getElementById("movieInfoContainer");
+  const display = document.getElementById("movieInfoDisplay");
+  if (!editBtn || !container || !display) return;
+
+  editBtn.addEventListener("click", () => {
+    // Build editable form
+    display.innerHTML = `
+      <div class="edit-form">
+        <div class="edit-field">
+          <label for="editTitle">Title</label>
+          <input type="text" id="editTitle" value="${escapeAttr(movie.title || "")}" maxlength="255">
+        </div>
+        <div class="edit-field">
+          <label for="editAuthor">Author</label>
+          <input type="text" id="editAuthor" value="${escapeAttr(movie.author || "")}" maxlength="255">
+        </div>
+        <div class="edit-field">
+          <label for="editReleaseDate">Release Date (YYYY-MM-DD)</label>
+          <input type="text" id="editReleaseDate" value="${escapeAttr(movie.release_date || "")}" placeholder="2024-01-15" maxlength="10">
+        </div>
+        <div class="edit-field">
+          <label for="editTags">Tags (comma separated)</label>
+          <input type="text" id="editTags" value="${escapeAttr(movie.tags || "")}" maxlength="255">
+        </div>
+        <div class="edit-field">
+          <label for="editDescription">Description</label>
+          <textarea id="editDescription" maxlength="1000" rows="4">${escapeHtml(movie.description || "")}</textarea>
+        </div>
+        <div class="edit-actions">
+          <button id="saveMovieBtn" class="btn-submit btn-save">Save</button>
+          <button id="cancelMovieBtn" class="btn-cancel">Cancel</button>
+        </div>
+        <div id="editStatus" class="edit-status"></div>
+      </div>
+    `;
+
+    editBtn.style.display = "none";
+
+    const saveBtn = document.getElementById("saveMovieBtn");
+    const cancelBtn = document.getElementById("cancelMovieBtn");
+    const statusEl = document.getElementById("editStatus");
+
+    cancelBtn.addEventListener("click", () => {
+      // Re-render the display view
+      display.innerHTML = `
+        <div class="info-grid">
+          <div class="info-row"><span class="preceding-info">Author</span><span class="value">${escapeHtml(movie.author || "Unknown")}</span></div>
+          <div class="info-row"><span class="preceding-info">Duration</span><span class="value">${formatDuration(movie.length_minutes)}</span></div>
+          <div class="info-row"><span class="preceding-info">Released</span><span class="value">${formatDate(movie.release_date)}</span></div>
+          <div class="info-row"><span class="preceding-info">Tags</span>${renderTags(movie.tags)}</div>
+        </div>
+        <div class="info-description">
+          <span class="preceding-info">Description</span>
+          <p>${escapeHtml(movie.description || "No description")}</p>
+        </div>
+      `;
+      editBtn.style.display = "flex";
+    });
+
+    saveBtn.addEventListener("click", async () => {
+      const updated = {
+        title: document.getElementById("editTitle").value.trim(),
+        author: document.getElementById("editAuthor").value.trim(),
+        release_date: document.getElementById("editReleaseDate").value.trim(),
+        tags: document.getElementById("editTags").value.trim(),
+        description: document.getElementById("editDescription").value.trim(),
+      };
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+      statusEl.className = "edit-status processing";
+      statusEl.textContent = "Saving changes...";
+
+      try {
+        const resp = await fetch(`/api/movie/${encodeURIComponent(id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.error || "Save failed");
+        }
+
+        // Update local movie object
+        Object.assign(movie, updated);
+
+        statusEl.className = "edit-status success";
+        statusEl.textContent = "Changes saved successfully!";
+
+        // Re-render display view
+        setTimeout(() => {
+          display.innerHTML = `
+            <div class="info-grid">
+              <div class="info-row"><span class="preceding-info">Author</span><span class="value">${escapeHtml(movie.author || "Unknown")}</span></div>
+              <div class="info-row"><span class="preceding-info">Duration</span><span class="value">${formatDuration(movie.length_minutes)}</span></div>
+              <div class="info-row"><span class="preceding-info">Released</span><span class="value">${formatDate(movie.release_date)}</span></div>
+              <div class="info-row"><span class="preceding-info">Tags</span>${renderTags(movie.tags)}</div>
+            </div>
+            <div class="info-description">
+              <span class="preceding-info">Description</span>
+              <p>${escapeHtml(movie.description || "No description")}</p>
+            </div>
+          `;
+          // Update the title in the header
+          const titleEl = container.querySelector(".movie-title");
+          if (titleEl) titleEl.textContent = movie.title;
+          editBtn.style.display = "flex";
+        }, 800);
+      } catch (err) {
+        statusEl.className = "edit-status error";
+        statusEl.textContent = "Failed to save: " + err.message;
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+      }
+    });
+  });
 }
 
 function escapeHtml(str) {

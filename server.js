@@ -17,6 +17,8 @@ import getDataEpisode from "./scripts/getDataEpisode.js";
 import search from "./scripts/search.js";
 import addSerie from "./scripts/addSerie.js";
 import addEpisodeHandler from "./scripts/addEpisode.js";
+import updateMovie from "./scripts/updateMovie.js";
+import updateEpisode from "./scripts/updateEpisode.js";
 import { getVideoTracks } from "./scripts/videoProbe.js";
 import dbConfig from "./scripts/dbConfig.js";
 import ffmpeg from "fluent-ffmpeg";
@@ -182,6 +184,46 @@ app.get("/api/dataEpisode", async (req, res) => {
   } catch (err) {
     console.error("Error fetching episode data:", err);
     res.status(500).json({ error: "Failed to fetch episode data" });
+  }
+});
+
+// Update a movie's metadata
+app.put("/api/movie/:id", async (req, res) => {
+  const id = String(req.params.id).replace(/[^A-Za-z0-9._\-]/g, "");
+  if (!id) return res.status(400).json({ error: "Invalid movie ID" });
+
+  const { title, author, description, release_date, tags } = req.body || {};
+  if (!title && !author && !description && !release_date && !tags) {
+    return res.status(400).json({ error: "No fields to update" });
+  }
+
+  try {
+    await updateMovie(id, { title, author, description, release_date, tags });
+    console.log(`[Update] Movie updated: ${id}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error updating movie:", err);
+    res.status(500).json({ error: "Failed to update movie" });
+  }
+});
+
+// Update an episode's metadata
+app.put("/api/episode/:id", async (req, res) => {
+  const id = String(req.params.id).replace(/[^A-Za-z0-9._\-]/g, "");
+  if (!id) return res.status(400).json({ error: "Invalid episode ID" });
+
+  const { title, description, date, episode, season } = req.body || {};
+  if (!title && !description && !date && !episode && !season) {
+    return res.status(400).json({ error: "No fields to update" });
+  }
+
+  try {
+    await updateEpisode(id, { title, description, date, episode, season });
+    console.log(`[Update] Episode updated: ${id}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error updating episode:", err);
+    res.status(500).json({ error: "Failed to update episode" });
   }
 });
 

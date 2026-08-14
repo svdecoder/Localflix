@@ -131,7 +131,7 @@ export default async function addMovieHandler(req) {
     const preset = QUALITY_PRESETS[quality];
     const videoOpts = [
       "-c:v", "libx264",
-      "-preset", "ultrafast",
+      "-preset", "fast",
       "-crf", "23",
       "-pix_fmt", "yuv420p",
       "-movflags", "+faststart",

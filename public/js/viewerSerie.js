@@ -140,23 +140,157 @@ async function domInserter() {
 
   // Episode info
   document.getElementById("videoInformation").innerHTML = `
-    <div class="videoInformations">
-      <h2 class="movie-title">${escapeHtml(ep.title)}</h2>
-      <div class="info-grid">
-        <div class="info-row"><span class="preceding-info">Series</span><span class="value">${escapeHtml(serie)}</span></div>
-        <div class="info-row"><span class="preceding-info">Season</span><span class="value">${ep.season || "?"}</span></div>
-        <div class="info-row"><span class="preceding-info">Episode</span><span class="value">${ep.episode || "?"}</span></div>
-        <div class="info-row"><span class="preceding-info">Duration</span><span class="value">${formatDuration(ep.length_minutes)}</span></div>
-        <div class="info-row"><span class="preceding-info">Released</span><span class="value">${formatDate(ep.date)}</span></div>
+    <div class="videoInformations" id="episodeInfoContainer">
+      <div class="info-header">
+        <h2 class="movie-title">${escapeHtml(ep.title)}</h2>
+        <button id="editEpisodeBtn" class="btn-edit" title="Edit episode information">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          Edit
+        </button>
       </div>
-      <div class="info-description">
-        <span class="preceding-info">Description</span>
-        <p>${escapeHtml(ep.description || "No description")}</p>
+      <div id="episodeInfoDisplay">
+        <div class="info-grid">
+          <div class="info-row"><span class="preceding-info">Series</span><span class="value">${escapeHtml(serie)}</span></div>
+          <div class="info-row"><span class="preceding-info">Season</span><span class="value">${ep.season || "?"}</span></div>
+          <div class="info-row"><span class="preceding-info">Episode</span><span class="value">${ep.episode || "?"}</span></div>
+          <div class="info-row"><span class="preceding-info">Duration</span><span class="value">${formatDuration(ep.length_minutes)}</span></div>
+          <div class="info-row"><span class="preceding-info">Released</span><span class="value">${formatDate(ep.date)}</span></div>
+        </div>
+        <div class="info-description">
+          <span class="preceding-info">Description</span>
+          <p>${escapeHtml(ep.description || "No description")}</p>
+        </div>
       </div>
     </div>
   `;
 
+  // Initialize edit functionality
+  initEpisodeEdit(ep, id);
+
   initVideoControls();
+}
+
+function initEpisodeEdit(ep, id) {
+  const editBtn = document.getElementById("editEpisodeBtn");
+  const container = document.getElementById("episodeInfoContainer");
+  const display = document.getElementById("episodeInfoDisplay");
+  if (!editBtn || !container || !display) return;
+
+  editBtn.addEventListener("click", () => {
+    // Build editable form
+    display.innerHTML = `
+      <div class="edit-form">
+        <div class="edit-field">
+          <label for="editTitle">Title</label>
+          <input type="text" id="editTitle" value="${escapeAttr(ep.title || "")}" maxlength="255">
+        </div>
+        <div class="edit-field">
+          <label for="editSeason">Season</label>
+          <input type="number" id="editSeason" value="${escapeAttr(ep.season || "")}" min="1">
+        </div>
+        <div class="edit-field">
+          <label for="editEpisode">Episode</label>
+          <input type="number" id="editEpisode" value="${escapeAttr(ep.episode || "")}" min="1">
+        </div>
+        <div class="edit-field">
+          <label for="editDate">Release Date (YYYY-MM-DD)</label>
+          <input type="text" id="editDate" value="${escapeAttr(ep.date || "")}" placeholder="2024-01-15" maxlength="10">
+        </div>
+        <div class="edit-field">
+          <label for="editDescription">Description</label>
+          <textarea id="editDescription" maxlength="255" rows="4">${escapeHtml(ep.description || "")}</textarea>
+        </div>
+        <div class="edit-actions">
+          <button id="saveEpisodeBtn" class="btn-submit btn-save">Save</button>
+          <button id="cancelEpisodeBtn" class="btn-cancel">Cancel</button>
+        </div>
+        <div id="editStatus" class="edit-status"></div>
+      </div>
+    `;
+
+    editBtn.style.display = "none";
+
+    const saveBtn = document.getElementById("saveEpisodeBtn");
+    const cancelBtn = document.getElementById("cancelEpisodeBtn");
+    const statusEl = document.getElementById("editStatus");
+
+    cancelBtn.addEventListener("click", () => {
+      // Re-render the display view
+      display.innerHTML = `
+        <div class="info-grid">
+          <div class="info-row"><span class="preceding-info">Series</span><span class="value">${escapeHtml(ep.serie_id || "?")}</span></div>
+          <div class="info-row"><span class="preceding-info">Season</span><span class="value">${ep.season || "?"}</span></div>
+          <div class="info-row"><span class="preceding-info">Episode</span><span class="value">${ep.episode || "?"}</span></div>
+          <div class="info-row"><span class="preceding-info">Duration</span><span class="value">${formatDuration(ep.length_minutes)}</span></div>
+          <div class="info-row"><span class="preceding-info">Released</span><span class="value">${formatDate(ep.date)}</span></div>
+        </div>
+        <div class="info-description">
+          <span class="preceding-info">Description</span>
+          <p>${escapeHtml(ep.description || "No description")}</p>
+        </div>
+      `;
+      editBtn.style.display = "flex";
+    });
+
+    saveBtn.addEventListener("click", async () => {
+      const updated = {
+        title: document.getElementById("editTitle").value.trim(),
+        season: document.getElementById("editSeason").value.trim(),
+        episode: document.getElementById("editEpisode").value.trim(),
+        date: document.getElementById("editDate").value.trim(),
+        description: document.getElementById("editDescription").value.trim(),
+      };
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+      statusEl.className = "edit-status processing";
+      statusEl.textContent = "Saving changes...";
+
+      try {
+        const resp = await fetch(`/api/episode/${encodeURIComponent(id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.error || "Save failed");
+        }
+
+        // Update local episode object
+        Object.assign(ep, updated);
+
+        statusEl.className = "edit-status success";
+        statusEl.textContent = "Changes saved successfully!";
+
+        // Re-render display view
+        setTimeout(() => {
+          display.innerHTML = `
+            <div class="info-grid">
+              <div class="info-row"><span class="preceding-info">Series</span><span class="value">${escapeHtml(ep.serie_id || "?")}</span></div>
+              <div class="info-row"><span class="preceding-info">Season</span><span class="value">${ep.season || "?"}</span></div>
+              <div class="info-row"><span class="preceding-info">Episode</span><span class="value">${ep.episode || "?"}</span></div>
+              <div class="info-row"><span class="preceding-info">Duration</span><span class="value">${formatDuration(ep.length_minutes)}</span></div>
+              <div class="info-row"><span class="preceding-info">Released</span><span class="value">${formatDate(ep.date)}</span></div>
+            </div>
+            <div class="info-description">
+              <span class="preceding-info">Description</span>
+              <p>${escapeHtml(ep.description || "No description")}</p>
+            </div>
+          `;
+          // Update the title in the header
+          const titleEl = container.querySelector(".movie-title");
+          if (titleEl) titleEl.textContent = ep.title;
+          editBtn.style.display = "flex";
+        }, 800);
+      } catch (err) {
+        statusEl.className = "edit-status error";
+        statusEl.textContent = "Failed to save: " + err.message;
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+      }
+    });
+  });
 }
 
 function escapeHtml(str) {
