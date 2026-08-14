@@ -1367,6 +1367,218 @@ select.track-select option {
   }
 }
 
+/* ===== Catalogue Page ===== */
+.catalogue-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.catalogue-header {
+  margin-bottom: 24px;
+}
+
+.catalogue-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.catalogue-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-top: 4px;
+}
+
+.catalogue-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.catalogue-search {
+  flex: 1;
+  min-width: 240px;
+}
+
+.catalogue-search input {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.catalogue-search input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.catalogue-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.catalogue-sort label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.catalogue-sort select {
+  padding: 10px 36px 10px 14px;
+  font-size: 0.9rem;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239ca3af' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  font-family: inherit;
+}
+
+.catalogue-sort select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.catalogue-sort select option {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.catalogue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 24px;
+}
+
+.catalogue-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.3s ease;
+}
+
+.catalogue-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--accent);
+}
+
+.catalogue-card-thumbnail {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background-color: var(--bg-secondary);
+}
+
+.catalogue-card-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s ease;
+}
+
+.catalogue-card:hover .catalogue-card-thumbnail img {
+  transform: scale(1.05);
+}
+
+.catalogue-card-length {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+}
+
+.catalogue-card-body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.catalogue-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalogue-card-author {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.catalogue-card-date {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.catalogue-card-description {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.catalogue-card .tag-list {
+  margin-top: auto;
+  padding: 6px 0 0;
+}
+
+.catalogue-empty {
+  text-align: center;
+  padding: 60px 24px;
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+}
+
+.catalogue-empty a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.catalogue-empty a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
 /* ===== Animations ===== */
 @keyframes fadeIn {
   from {

@@ -11,6 +11,7 @@ const __dirname = dirname(__filename);
 import addMovieHandler from "./scripts/addMovie.js";
 import vidIdentifiers from "./scripts/index.js";
 import getDataMovie from "./scripts/getDataMovie.js";
+import getCatalogue from "./scripts/getCatalogue.js";
 import getDataSeries from "./scripts/getDataSerie.js";
 import getDataEpisodes from "./scripts/getDataEpisodes.js";
 import getDataEpisode from "./scripts/getDataEpisode.js";
@@ -120,6 +121,16 @@ app.get("/api/newVideo", async (req, res) => {
   } catch (err) {
     console.error("Error fetching new videos:", err);
     res.status(500).json({ error: "Failed to fetch videos" });
+  }
+});
+
+app.get("/api/catalogue", async (req, res) => {
+  try {
+    const movies = await getCatalogue();
+    res.json(movies);
+  } catch (err) {
+    console.error("Error fetching catalogue:", err);
+    res.status(500).json({ error: "Failed to fetch catalogue" });
   }
 });
 
@@ -566,6 +577,10 @@ app.get("/viewerM", (req, res) => {
 
 app.get("/viewerS", (req, res) => {
   res.sendFile(path.join(__dirname, "public/html", "viewerSerie.html"));
+});
+
+app.get("/catalogue", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/html", "catalogue.html"));
 });
 
 app.get("/search", (req, res) => {

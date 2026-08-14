@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Catalogue - Localflix</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+</head>
+<body>
+  <div id="header"></div>
+
+  <div class="catalogue-page">
+    <div class="catalogue-header">
+      <h1 class="catalogue-title">Movie Catalogue</h1>
+      <p class="catalogue-subtitle">Browse all the movies in your library</p>
+    </div>
+
+    <div class="catalogue-controls">
+      <div class="catalogue-search">
+        <input type="text" id="catalogueSearch" placeholder="Search by title, author, or tag...">
+      </div>
+      <div class="catalogue-sort">
+        <label for="sortSelect">Sort by</label>
+        <select id="sortSelect">
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="title-asc">Title (A-Z)</option>
+          <option value="title-desc">Title (Z-A)</option>
+          <option value="author">Author</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="catalogueGrid" class="catalogue-grid"></div>
+    <div id="catalogueEmpty" class="catalogue-empty" style="display:none;">
+      <p>No movies found. <a href="/add-movie">Add a movie</a> to get started.</p>
+    </div>
+  </div>
+
+  <script src="/js/catalogue.js"></script>
+  <script src="/js/header.js"></script>
+</body>
+</html>
