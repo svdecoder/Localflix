@@ -22,6 +22,8 @@ import updateMovie from "./scripts/updateMovie.js";
 import updateEpisode from "./scripts/updateEpisode.js";
 import { getVideoTracks } from "./scripts/videoProbe.js";
 import dbConfig from "./scripts/dbConfig.js";
+import getStats from "./scripts/getStats.js";
+import wipeData from "./scripts/wipeData.js";
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
 
@@ -562,6 +564,97 @@ app.post("/api/uploadSrt", srtUpload.single("srt"), async (req, res) => {
   });
 });
 
+// ===== Config / Stats / Wipe API =====
+const FFMPEG_CONFIG_PATH = path.join(__dirname, "config", "ffmpegPresets.json");
+
+const DEFAULT_FFMPEG_CONFIG = {
+  presets: {
+    "480p": { scale: "854:480", videoBitrate: "1000k", maxrate: "1200k", bufsize: "2000k" },
+    "720p": { scale: "1280:720", videoBitrate: "2500k", maxrate: "3000k", bufsize: "5000k" },
+    "1080p": { scale: "1920:1080", videoBitrate: "5000k", maxrate: "6000k", bufsize: "10000k" },
+    "1440p": { scale: "2560:1440", videoBitrate: "8000k", maxrate: "10000k", bufsize: "16000k" },
+    "original": null
+  },
+  encoding: {
+    preset: "fast",
+    crf: "23",
+    pix_fmt: "yuv420p",
+    movflags: "+faststart",
+    audioCodec: "aac",
+    audioChannels: "2",
+    subtitleCodec: "mov_text"
+  }
+};
+
+function readFfmpegConfig() {
+  try {
+    if (fs.existsSync(FFMPEG_CONFIG_PATH)) {
+      return JSON.parse(fs.readFileSync(FFMPEG_CONFIG_PATH, "utf-8"));
+    }
+  } catch (err) {
+    console.error("Error reading ffmpeg config:", err);
+  }
+  return JSON.parse(JSON.stringify(DEFAULT_FFMPEG_CONFIG));
+}
+
+// Get library stats
+app.get("/api/stats", async (req, res) => {
+  try {
+    const stats = await getStats();
+    res.json(stats);
+  } catch (err) {
+    console.error("Error fetching stats:", err);
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+// Wipe content
+app.post("/api/wipe", async (req, res) => {
+  const { target } = req.body || {};
+  if (!target || !["movies", "series", "uploads", "all"].includes(target)) {
+    return res.status(400).json({ error: "Invalid wipe target" });
+  }
+  try {
+    const result = await wipeData(target);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error("Error wiping data:", err);
+    res.status(500).json({ error: "Failed to wipe data" });
+  }
+});
+
+// Get ffmpeg config
+app.get("/api/ffmpegConfig", (req, res) => {
+  res.json(readFfmpegConfig());
+});
+
+// Save ffmpeg config
+app.put("/api/ffmpegConfig", (req, res) => {
+  const { encoding, presets } = req.body || {};
+  if (!encoding || !presets) {
+    return res.status(400).json({ error: "Missing encoding or presets" });
+  }
+  try {
+    const config = { encoding, presets };
+    fs.writeFileSync(FFMPEG_CONFIG_PATH, JSON.stringify(config, null, 2));
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error saving ffmpeg config:", err);
+    res.status(500).json({ error: "Failed to save ffmpeg config" });
+  }
+});
+
+// Reset ffmpeg config to defaults
+app.post("/api/ffmpegConfig/reset", (req, res) => {
+  try {
+    fs.writeFileSync(FFMPEG_CONFIG_PATH, JSON.stringify(DEFAULT_FFMPEG_CONFIG, null, 2));
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error resetting ffmpeg config:", err);
+    res.status(500).json({ error: "Failed to reset ffmpeg config" });
+  }
+});
+
 // Page Routes
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public/html", "index.html"));
@@ -585,6 +678,10 @@ app.get("/catalogue", (req, res) => {
 
 app.get("/search", (req, res) => {
   res.sendFile(path.join(__dirname, "public/html", "search.html"));
+});
+
+app.get("/config", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/html", "config.html"));
 });
 
 app.get("/add", (req, res) => {

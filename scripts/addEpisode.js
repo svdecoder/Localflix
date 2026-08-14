@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import dbConfig from "./dbConfig.js";
+import { getQualityPresets, getEncodingSettings } from "./ffmpegConfig.js";
 
 function inputSanitize(input) {
   return String(input).replace(/[^A-Za-z0-9._\- ]+/g, "");
@@ -15,13 +16,8 @@ function truncate(input, maxLength) {
   return String(input).slice(0, maxLength);
 }
 
-const QUALITY_PRESETS = {
-  "480p": { scale: "854:480", videoBitrate: "1000k", maxrate: "1200k", bufsize: "2000k" },
-  "720p": { scale: "1280:720", videoBitrate: "2500k", maxrate: "3000k", bufsize: "5000k" },
-  "1080p": { scale: "1920:1080", videoBitrate: "5000k", maxrate: "6000k", bufsize: "10000k" },
-  "1440p": { scale: "2560:1440", videoBitrate: "8000k", maxrate: "10000k", bufsize: "16000k" },
-  "original": null,
-};
+const QUALITY_PRESETS = getQualityPresets();
+const ENCODING = getEncodingSettings();
 
 export default async function addEpisodeHandler(req) {
   const stagedFile = req.body.stagedFile;
@@ -123,10 +119,10 @@ export default async function addEpisodeHandler(req) {
     const preset = QUALITY_PRESETS[quality];
     const videoOpts = [
       "-c:v", "libx264",
-      "-preset", "fast",
-      "-crf", "23",
-      "-pix_fmt", "yuv420p",
-      "-movflags", "+faststart",
+      "-preset", ENCODING.preset || "fast",
+      "-crf", ENCODING.crf || "23",
+      "-pix_fmt", ENCODING.pix_fmt || "yuv420p",
+      "-movflags", ENCODING.movflags || "+faststart",
     ];
     if (preset) {
       videoOpts.push("-vf", `scale=${preset.scale}:force_original_aspect_ratio=decrease,pad=${preset.scale}:(ow-iw)/2:(oh-ih)/2`);
@@ -137,14 +133,14 @@ export default async function addEpisodeHandler(req) {
 
     // Audio encoding
     const audioOpts = [
-      "-c:a", "aac",
-      "-ac", "2",
+      "-c:a", ENCODING.audioCodec || "aac",
+      "-ac", ENCODING.audioChannels || "2",
     ];
 
     // Subtitle encoding
     const subtitleOpts = [];
     if (selectedSubtitleIndexes.length > 0 || srtEntries.length > 0) {
-      subtitleOpts.push("-c:s", "mov_text");
+      subtitleOpts.push("-c:s", ENCODING.subtitleCodec || "mov_text");
     }
 
     const allOpts = [...mapOpts, ...videoOpts, ...audioOpts, ...subtitleOpts];

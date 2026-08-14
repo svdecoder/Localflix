@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Config — Localflix</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/config.css">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+</head>
+<body>
+  <div id="header"></div>
+
+  <div class="config-page">
+    <div class="config-header">
+      <h1 class="config-title">Configuration</h1>
+      <p class="config-subtitle">Monitor your library, manage storage, and tune encoding</p>
+    </div>
+
+    <!-- ===== Monitoring Studio ===== -->
+    <section class="config-section">
+      <h2 class="section-title">Monitoring Studio</h2>
+
+      <div class="stats-grid">
+        <!-- Disk Usage -->
+        <div class="stat-card stat-card-wide">
+          <div class="stat-card-header">
+            <span class="stat-icon">💾</span>
+            <h3>Disk Usage</h3>
+          </div>
+          <div class="stat-main" id="statTotalDisk">—</div>
+          <div class="stat-sub">Total storage used</div>
+          <div class="disk-breakdown">
+            <div class="disk-row">
+              <span>Movies</span>
+              <span id="diskMovies">—</span>
+            </div>
+            <div class="disk-row">
+              <span>Series</span>
+              <span id="diskSeries">—</span>
+            </div>
+            <div class="disk-row">
+              <span>Thumbnails</span>
+              <span id="diskThumbnails">—</span>
+            </div>
+            <div class="disk-row">
+              <span>Pending uploads</span>
+              <span id="diskUploads">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Movies -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">🎬</span>
+            <h3>Movies</h3>
+          </div>
+          <div class="stat-main" id="statMovies">—</div>
+          <div class="stat-sub">In library</div>
+        </div>
+
+        <!-- Series -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">📺</span>
+            <h3>Series</h3>
+          </div>
+          <div class="stat-main" id="statSeries">—</div>
+          <div class="stat-sub">In library</div>
+        </div>
+
+        <!-- Episodes -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">📼</span>
+            <h3>Episodes</h3>
+          </div>
+          <div class="stat-main" id="statEpisodes">—</div>
+          <div class="stat-sub">Across all series</div>
+        </div>
+
+        <!-- Total Videos -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">🎥</span>
+            <h3>Total Videos</h3>
+          </div>
+          <div class="stat-main" id="statTotalVideos">—</div>
+          <div class="stat-sub">Movies + episodes</div>
+        </div>
+
+        <!-- Pending -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">⏳</span>
+            <h3>Pending</h3>
+          </div>
+          <div class="stat-main" id="statPending">—</div>
+          <div class="stat-sub">Awaiting processing</div>
+        </div>
+
+        <!-- Watch Time -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">⏱️</span>
+            <h3>Total Watch Time</h3>
+          </div>
+          <div class="stat-main" id="statWatchHours">—</div>
+          <div class="stat-sub">Hours of content</div>
+        </div>
+
+        <!-- Unique Tags -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">🏷️</span>
+            <h3>Unique Tags</h3>
+          </div>
+          <div class="stat-main" id="statTags">—</div>
+          <div class="stat-sub">Distinct categories</div>
+        </div>
+
+        <!-- New This Week -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">🆕</span>
+            <h3>New This Week</h3>
+          </div>
+          <div class="stat-main" id="statNewThisWeek">—</div>
+          <div class="stat-sub">Movies + series added</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Wipe Space ===== -->
+    <section class="config-section">
+      <h2 class="section-title">Wipe Space</h2>
+      <p class="config-section-desc">Permanently delete content from your library. This action cannot be undone.</p>
+
+      <div class="wipe-grid">
+        <div class="wipe-card">
+          <div class="wipe-card-header">
+            <span class="wipe-icon">🎬</span>
+            <h3>Wipe Movies</h3>
+          </div>
+          <p>Delete all movies, their video files, thumbnails, and database entries.</p>
+          <button class="btn-wipe" data-target="movies">Wipe All Movies</button>
+        </div>
+
+        <div class="wipe-card">
+          <div class="wipe-card-header">
+            <span class="wipe-icon">📺</span>
+            <h3>Wipe Series</h3>
+          </div>
+          <p>Delete all series, their episodes, video files, thumbnails, and database entries.</p>
+          <button class="btn-wipe" data-target="series">Wipe All Series</button>
+        </div>
+
+        <div class="wipe-card">
+          <div class="wipe-card-header">
+            <span class="wipe-icon">⏳</span>
+            <h3>Wipe Pending Uploads</h3>
+          </div>
+          <p>Delete all staged uploads and chunked files that haven't been processed yet.</p>
+          <button class="btn-wipe" data-target="uploads">Wipe Pending Uploads</button>
+        </div>
+
+        <div class="wipe-card wipe-card-danger">
+          <div class="wipe-card-header">
+            <span class="wipe-icon">⚠️</span>
+            <h3>Wipe Everything</h3>
+          </div>
+          <p>Delete all movies, series, episodes, thumbnails, and pending uploads. Complete factory reset.</p>
+          <button class="btn-wipe btn-wipe-danger" data-target="all">Wipe Everything</button>
+        </div>
+      </div>
+
+      <div id="wipeStatus" class="wipe-status"></div>
+    </section>
+
+    <!-- ===== FFmpeg Preset Config ===== -->
+    <section class="config-section">
+      <h2 class="section-title">FFmpeg Preset Configuration</h2>
+      <p class="config-section-desc">Configure the encoding settings used when processing new videos.</p>
+
+      <div class="ffmpeg-config">
+        <div class="ffmpeg-section">
+          <h3>Encoding Settings</h3>
+          <div class="ffmpeg-fields">
+            <div class="ffmpeg-field">
+              <label for="encPreset">Preset</label>
+              <select id="encPreset">
+                <option value="ultrafast">Ultrafast</option>
+                <option value="superfast">Superfast</option>
+                <option value="veryfast">Veryfast</option>
+                <option value="faster">Faster</option>
+                <option value="fast">Fast</option>
+                <option value="medium">Medium</option>
+                <option value="slow">Slow</option>
+                <option value="slower">Slower</option>
+                <option value="veryslow">Veryslow</option>
+              </select>
+            </div>
+            <div class="ffmpeg-field">
+              <label for="encCrf">CRF (0-51, lower = better quality)</label>
+              <input type="number" id="encCrf" min="0" max="51" step="1">
+            </div>
+            <div class="ffmpeg-field">
+              <label for="encPixFmt">Pixel Format</label>
+              <input type="text" id="encPixFmt">
+            </div>
+            <div class="ffmpeg-field">
+              <label for="encMovflags">MOV Flags</label>
+              <input type="text" id="encMovflags">
+            </div>
+            <div class="ffmpeg-field">
+              <label for="encAudioCodec">Audio Codec</label>
+              <input type="text" id="encAudioCodec">
+            </div>
+            <div class="ffmpeg-field">
+              <label for="encAudioChannels">Audio Channels</label>
+              <input type="text" id="encAudioChannels">
+            </div>
+            <div class="ffmpeg-field">
+              <label for="encSubtitleCodec">Subtitle Codec</label>
+              <input type="text" id="encSubtitleCodec">
+            </div>
+          </div>
+        </div>
+
+        <div class="ffmpeg-section">
+          <h3>Quality Presets</h3>
+          <div class="preset-tabs" id="presetTabs"></div>
+          <div class="preset-editor" id="presetEditor">
+            <div class="ffmpeg-fields">
+              <div class="ffmpeg-field">
+                <label for="presetScale">Scale (WxH)</label>
+                <input type="text" id="presetScale" placeholder="1920:1080">
+              </div>
+              <div class="ffmpeg-field">
+                <label for="presetVideoBitrate">Video Bitrate</label>
+                <input type="text" id="presetVideoBitrate" placeholder="5000k">
+              </div>
+              <div class="ffmpeg-field">
+                <label for="presetMaxrate">Max Rate</label>
+                <input type="text" id="presetMaxrate" placeholder="6000k">
+              </div>
+              <div class="ffmpeg-field">
+                <label for="presetBufsize">Buffer Size</label>
+                <input type="text" id="presetBufsize" placeholder="10000k">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ffmpeg-actions">
+          <button class="btn-save-config" id="saveFfmpegBtn">Save FFmpeg Configuration</button>
+          <button class="btn-reset-config" id="resetFfmpegBtn">Reset to Defaults</button>
+          <div id="ffmpegStatus" class="ffmpeg-status"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/header.js"></script>
+</body>
+</html>
