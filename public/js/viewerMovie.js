@@ -114,6 +114,10 @@ async function domInserter() {
           <button class="ctrl-btn" id="muteBtn" title="Mute/Unmute (M)">
             <svg id="muteIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
           </button>
+          <button class="ctrl-btn" id="boostBtn" title="Volume boost: 100% (B)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+            <span class="boost-label" id="boostLabel">100%</span>
+          </button>
           <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
           <div class="spacer"></div>
           <div class="controls-group">
@@ -482,6 +486,64 @@ function initVideoControls(movieId) {
     updateMuteIcon();
   });
   video.addEventListener("volumechange", updateMuteIcon);
+
+  // ===== Volume Boost (Web Audio API) =====
+  // HTML5 video volume is capped at 1.0 (100%). To go beyond that like VLC,
+  // we route the video's audio through a GainNode that can amplify up to 200%.
+  const boostBtn = document.getElementById("boostBtn");
+  const boostLabel = document.getElementById("boostLabel");
+  const BOOST_LEVELS = [1.0, 1.25, 1.5, 1.75, 2.0];
+  let boostIndex = 0;
+  let audioCtx = null;
+  let gainNode = null;
+  let sourceNode = null;
+
+  function setupBoostGraph() {
+    if (!audioCtx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      audioCtx = new AudioCtx();
+      gainNode = audioCtx.createGain();
+      gainNode.gain.value = BOOST_LEVELS[boostIndex];
+      gainNode.connect(audioCtx.destination);
+    }
+    if (!sourceNode) {
+      try {
+        sourceNode = audioCtx.createMediaElementSource(video);
+        sourceNode.connect(gainNode);
+      } catch (e) {
+        // createMediaElementSource can only be called once per element.
+        // If it fails, boost is unavailable for this session.
+        console.warn("Volume boost unavailable:", e);
+      }
+    }
+  }
+
+  function applyBoost() {
+    boostIndex = (boostIndex + 1) % BOOST_LEVELS.length;
+    const level = BOOST_LEVELS[boostIndex];
+    const pct = Math.round(level * 100);
+    boostLabel.textContent = `${pct}%`;
+    boostBtn.title = `Volume boost: ${pct}% (B)`;
+    boostBtn.classList.toggle("boost-active", level > 1.0);
+    if (gainNode) {
+      gainNode.gain.value = level;
+    }
+  }
+
+  boostBtn.addEventListener("click", () => {
+    setupBoostGraph();
+    applyBoost();
+  });
+
+  // Keyboard shortcut: B to cycle boost
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+    if (e.key === "b" || e.key === "B") {
+      setupBoostGraph();
+      applyBoost();
+    }
+  });
 
   // Skip buttons
   skipBackBtn.addEventListener("click", () => {
