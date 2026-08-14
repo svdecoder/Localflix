@@ -10,8 +10,12 @@ function inputSanitize(input) {
   return String(input).replace(/[^A-Za-z0-9._\- ]+/g, "");
 }
 
+function truncate(input, maxLength) {
+  return String(input).slice(0, maxLength);
+}
+
 export default async function addSerie(req) {
-  const title = inputSanitize(req.body.title);
+  const title = truncate(inputSanitize(req.body.title), 255);
   const folderPath = path.join(__dirname, "..", "data", "serie", title);
 
   // Create serie folder
@@ -37,12 +41,12 @@ export default async function addSerie(req) {
 }
 
 async function databaseAdd(req) {
-  const title = inputSanitize(req.body.title);
-  const description = inputSanitize(req.body.description);
-  const releaseDate = inputSanitize(req.body.releaseDate);
-  const author = inputSanitize(req.body.author);
-  const tags = String(req.body.tags).replace(/[^A-Za-z0-9._\- ,]+/g, "");
-  const NoS = inputSanitize(req.body.NoS);
+  const title = truncate(inputSanitize(req.body.title), 255);
+  const description = truncate(inputSanitize(req.body.description), 1000);
+  const releaseDate = truncate(inputSanitize(req.body.releaseDate), 10);
+  const author = truncate(inputSanitize(req.body.author), 255);
+  const tags = truncate(String(req.body.tags).replace(/[^A-Za-z0-9._\- ,]+/g, ""), 255);
+  const NoS = truncate(inputSanitize(req.body.NoS), 10);
 
   const con = mysql.createConnection({
     host: dbConfig.host,

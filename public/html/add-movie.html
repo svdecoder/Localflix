@@ -13,19 +13,19 @@
     <form method="POST" enctype="multipart/form-data" action="/add-movie" name="add" id="movieForm">
 
       <label for="title">Movie Title</label>
-      <input type="text" id="title" name="title" required>
+      <input type="text" id="title" name="title" required maxlength="255">
 
       <label for="description">Description</label>
-      <input type="text" id="description" name="description">
+      <input type="text" id="description" name="description" maxlength="1000">
 
       <label for="tags">Tags (comma separated)</label>
-      <input type="text" id="tags" name="tags">
+      <input type="text" id="tags" name="tags" maxlength="255">
 
       <label for="author">Author / Director</label>
-      <input type="text" id="author" name="author">
+      <input type="text" id="author" name="author" maxlength="255">
 
       <label for="releaseDate">Release Date (YYYY-MM-DD)</label>
-      <input type="text" id="releaseDate" name="releaseDate" placeholder="2024-01-15">
+      <input type="text" id="releaseDate" name="releaseDate" placeholder="2024-01-15" maxlength="10">
 
       <label for="quality">Output Quality</label>
       <select id="quality" name="quality">

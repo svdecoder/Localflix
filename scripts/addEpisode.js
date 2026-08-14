@@ -11,6 +11,10 @@ function inputSanitize(input) {
   return String(input).replace(/[^A-Za-z0-9._\- ]+/g, "");
 }
 
+function truncate(input, maxLength) {
+  return String(input).slice(0, maxLength);
+}
+
 const QUALITY_PRESETS = {
   "480p": { scale: "854:480", videoBitrate: "1000k", maxrate: "1200k", bufsize: "2000k" },
   "720p": { scale: "1280:720", videoBitrate: "2500k", maxrate: "3000k", bufsize: "5000k" },
@@ -23,8 +27,8 @@ export default async function addEpisodeHandler(req) {
   const stagedFile = req.body.stagedFile;
   if (!stagedFile) throw new Error("No staged file reference. Upload the video first for analysis.");
 
-  const serie = inputSanitize(req.body.serieID);
-  const episodeUploadName = inputSanitize(stagedFile);
+  const serie = truncate(inputSanitize(req.body.serieID), 255);
+  const episodeUploadName = truncate(inputSanitize(stagedFile), 255);
   const episodePath = path.join(__dirname, "..", "data", "serie", serie);
   const thumbnailPath = path.join(__dirname, "..", "data", "thumbnail", serie);
   const uploadedFilePath = path.join(__dirname, "..", "data", "uploads", stagedFile);
@@ -193,12 +197,12 @@ export default async function addEpisodeHandler(req) {
 }
 
 async function databaseAdd(req, episodeUploadName, newEpisode) {
-  const title = inputSanitize(req.body.title);
-  const serie = inputSanitize(req.body.serieID);
-  const date = inputSanitize(req.body.releaseDate);
-  const description = inputSanitize(req.body.description);
-  const episode = inputSanitize(req.body.episod);
-  const season = inputSanitize(req.body.season);
+  const title = truncate(inputSanitize(req.body.title), 255);
+  const serie = truncate(inputSanitize(req.body.serieID), 255);
+  const date = truncate(inputSanitize(req.body.releaseDate), 10);
+  const description = truncate(inputSanitize(req.body.description), 255);
+  const episode = truncate(inputSanitize(req.body.episod), 10);
+  const season = truncate(inputSanitize(req.body.season), 10);
 
   const durationSeconds = await new Promise((resolve, reject) => {
     ffmpeg.ffprobe(newEpisode, (err, metadata) => {

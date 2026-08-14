@@ -11,6 +11,10 @@ function inputSanitize(input) {
   return String(input).replace(/[^A-Za-z0-9._\- ]+/g, "");
 }
 
+function truncate(input, maxLength) {
+  return String(input).slice(0, maxLength);
+}
+
 const QUALITY_PRESETS = {
   "480p": { scale: "854:480", videoBitrate: "1000k", maxrate: "1200k", bufsize: "2000k" },
   "720p": { scale: "1280:720", videoBitrate: "2500k", maxrate: "3000k", bufsize: "5000k" },
@@ -201,11 +205,11 @@ export default async function addMovieHandler(req) {
 }
 
 async function databaseAdd(req, identifiers, newMovie) {
-  const title = inputSanitize(req.body.title);
-  const author = inputSanitize(req.body.author);
-  const releaseDate = inputSanitize(req.body.releaseDate);
-  const description = inputSanitize(req.body.description);
-  const tags = String(req.body.tags).replace(/[^A-Za-z0-9._\- ,]+/g, "");
+  const title = truncate(inputSanitize(req.body.title), 255);
+  const author = truncate(inputSanitize(req.body.author), 255);
+  const releaseDate = truncate(inputSanitize(req.body.releaseDate), 10);
+  const description = truncate(inputSanitize(req.body.description), 1000);
+  const tags = truncate(String(req.body.tags).replace(/[^A-Za-z0-9._\- ,]+/g, ""), 255);
 
   const durationSeconds = await new Promise((resolve, reject) => {
     ffmpeg.ffprobe(newMovie, (err, metadata) => {

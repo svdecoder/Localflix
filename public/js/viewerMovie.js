@@ -45,11 +45,54 @@ async function domInserter() {
   const streamUrl = `/stream/movie/${encodeURIComponent(id)}`;
   const downloadUrl = streamUrl;
 
-  // Video player with custom controls only (no native controls to avoid double viewer)
+  // Fetch track info BEFORE building the video HTML so <track> elements
+  // are present from the start — browsers need this for proper TextTrack init.
+  let trackData = { audio: [], subtitles: [] };
+  try {
+    const resp = await fetch(`/api/videoTracks?path=data/movies/${encodeURIComponent(id)}.mp4`);
+    if (resp.ok) trackData = await resp.json();
+  } catch (e) {
+    console.log("Could not load track info:", e);
+  }
+
+  // Build <track> HTML strings for subtitles
+  let trackHtml = "";
+  for (const s of trackData.subtitles || []) {
+    const lang = s.language !== "und" ? ` srclang="${escapeAttr(s.language)}"` : "";
+    const label = escapeAttr(s.title || `Sub ${s.index}`);
+    trackHtml += `<track kind="subtitles" src="/api/subtitle?path=data/movies/${encodeURIComponent(id)}.mp4&index=${s.index}"${lang} label="${label}" data-index="${s.index}">`;
+  }
+
+  // Build audio select options
+  let audioOptions = "";
+  if (trackData.audio && trackData.audio.length >= 1) {
+    for (let i = 0; i < trackData.audio.length; i++) {
+      const a = trackData.audio[i];
+      const lang = a.language !== "und" ? ` [${a.language}]` : "";
+      const selected = i === 0 ? " selected" : "";
+      audioOptions += `<option value="${a.index}"${selected}>Audio: ${escapeHtml(a.title || "Track " + a.index)}${lang}</option>`;
+    }
+  } else {
+    audioOptions = `<option value="">Audio: None detected</option>`;
+  }
+
+  // Build subtitle select options
+  let subOptions = '<option value="-1">Subs: Off</option>';
+  if (trackData.subtitles && trackData.subtitles.length > 0) {
+    for (const s of trackData.subtitles) {
+      const lang = s.language !== "und" ? ` [${s.language}]` : "";
+      subOptions += `<option value="${s.index}">${escapeHtml(s.title || "Sub " + s.index)}${lang}</option>`;
+    }
+  } else {
+    subOptions = `<option value="-1">Subs: None detected</option>`;
+  }
+
+  // Video player with custom controls — <track> elements baked into initial HTML
   document.getElementById("videoDisplay").innerHTML = `
     <div class="video-player-wrapper">
       <video id="video" crossorigin="anonymous" preload="metadata">
         <source src="${streamUrl}" type="video/mp4">
+        ${trackHtml}
         Your browser does not support the video tag.
       </video>
       <div class="video-controls-overlay" id="customControls">
@@ -74,16 +117,16 @@ async function domInserter() {
           <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
           <div class="spacer"></div>
           <div class="controls-group">
-            <div class="select-wrapper" id="audioSelectWrapper" style="display:none;">
+            <div class="select-wrapper" id="audioSelectWrapper">
               <svg class="select-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
               <select id="audioTrackSelect" class="track-select" title="Audio track">
-                <option value="">Audio tracks</option>
+                ${audioOptions}
               </select>
             </div>
-            <div class="select-wrapper" id="subSelectWrapper" style="display:none;">
+            <div class="select-wrapper" id="subSelectWrapper">
               <svg class="select-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h8v2H6zm10 0h2v2h-2zm-6-4h8v2h-8z"/></svg>
               <select id="subtitleTrackSelect" class="track-select" title="Subtitles">
-                <option value="-1">Subtitles</option>
+                ${subOptions}
               </select>
             </div>
             <a id="downloadBtn" class="ctrl-btn download-btn" href="${downloadUrl}" download title="Download video">
@@ -126,6 +169,14 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function escapeAttr(str) {
+  return String(str)
+    .replace(/&/g, "\u0026amp;")
+    .replace(/"/g, "\u0026quot;")
+    .replace(/</g, "\u0026lt;")
+    .replace(/>/g, "\u0026gt;");
+}
+
 function renderTags(tags) {
   if (!tags || tags === "None") return '<span class="value">None</span>';
   return `<span class="tag-list">` + String(tags)
@@ -155,10 +206,67 @@ function initVideoControls(movieId) {
   const audioSelectWrapper = document.getElementById("audioSelectWrapper");
   const subtitleSelect = document.getElementById("subtitleTrackSelect");
   const subSelectWrapper = document.getElementById("subSelectWrapper");
+  const wrapper = video.closest(".video-player-wrapper");
+
+  // ===== Controls auto-hide/show =====
+  let hideTimeout = null;
+  let clickTimer = null;
+
+  function showControls() {
+    if (wrapper) wrapper.classList.remove("controls-hidden");
+    scheduleHide();
+  }
+
+  function hideControls() {
+    if (wrapper) wrapper.classList.add("controls-hidden");
+  }
+
+  function scheduleHide() {
+    if (hideTimeout) clearTimeout(hideTimeout);
+    hideTimeout = setTimeout(() => {
+      if (!video.paused) hideControls();
+    }, 3000);
+  }
+
+  function cancelHide() {
+    if (hideTimeout) clearTimeout(hideTimeout);
+    hideTimeout = null;
+  }
+
+  // Toggle fullscreen on the wrapper element
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else if (wrapper) {
+      if (wrapper.requestFullscreen) {
+        wrapper.requestFullscreen();
+      } else if (wrapper.webkitRequestFullscreen) {
+        wrapper.webkitRequestFullscreen();
+      } else if (wrapper.mozRequestFullScreen) {
+        wrapper.mozRequestFullScreen();
+      }
+    }
+  }
 
   // Ensure video is not muted on load
   video.muted = false;
   video.volume = 1.0;
+
+  // Subtitle track selection — enable the chosen track on the video element
+  function applySubtitleTrack() {
+    const idx = parseInt(subtitleSelect.value, 10);
+    const tracks = video.querySelectorAll("track");
+    for (const trackEl of tracks) {
+      let isSelected = false;
+      if (idx !== -1 && trackEl.dataset.index === String(idx)) {
+        isSelected = true;
+      }
+      if (trackEl.track) {
+        trackEl.track.mode = isSelected ? "showing" : "disabled";
+      }
+    }
+  }
+  subtitleSelect.addEventListener("change", applySubtitleTrack);
 
   function formatTime(seconds) {
     if (isNaN(seconds) || !isFinite(seconds)) return "0:00";
@@ -202,19 +310,38 @@ function initVideoControls(movieId) {
     updatePlayPauseIcon();
   });
 
-  video.addEventListener("play", updatePlayPauseIcon);
-  video.addEventListener("pause", updatePlayPauseIcon);
+  video.addEventListener("play", () => {
+    updatePlayPauseIcon();
+    scheduleHide();
+  });
+  video.addEventListener("pause", () => {
+    updatePlayPauseIcon();
+    cancelHide();
+    showControls();
+  });
 
-  // Click video to toggle play/pause
+  // Click video to toggle play/pause (single click, delayed to avoid double-click conflict)
   video.addEventListener("click", (e) => {
     if (e.detail === 1) {
-      if (video.paused) {
-        video.play().catch(() => {});
-      } else {
-        video.pause();
-      }
-      updatePlayPauseIcon();
+      clickTimer = window.setTimeout(() => {
+        if (video.paused) {
+          video.play().catch(() => {});
+        } else {
+          video.pause();
+        }
+        updatePlayPauseIcon();
+      }, 220);
     }
+  });
+
+  // Double-click video to toggle fullscreen
+  video.addEventListener("dblclick", (e) => {
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+    }
+    e.preventDefault();
+    toggleFullscreen();
   });
 
   // Mute/Unmute
@@ -232,21 +359,7 @@ function initVideoControls(movieId) {
     video.currentTime = Math.min(video.duration || 0, video.currentTime + 10);
   });
 
-  // Fullscreen — request fullscreen on the wrapper element
-  fullscreenBtn.addEventListener("click", () => {
-    const wrapper = video.closest(".video-player-wrapper");
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else if (wrapper) {
-      if (wrapper.requestFullscreen) {
-        wrapper.requestFullscreen();
-      } else if (wrapper.webkitRequestFullscreen) {
-        wrapper.webkitRequestFullscreen();
-      } else if (wrapper.mozRequestFullScreen) {
-        wrapper.mozRequestFullScreen();
-      }
-    }
-  });
+  fullscreenBtn.addEventListener("click", toggleFullscreen);
 
   // Track fullscreen changes
   document.addEventListener("fullscreenchange", () => {
@@ -258,7 +371,20 @@ function initVideoControls(movieId) {
         wrapper.style.height = "";
       }
     }
+    showControls();
   });
+
+  // Reappear controls on mouse movement over the player
+  if (wrapper) {
+    wrapper.addEventListener("mousemove", showControls);
+    wrapper.addEventListener("mouseenter", showControls);
+    wrapper.addEventListener("mouseleave", () => {
+      if (!video.paused) hideControls();
+    });
+  }
+
+  // Show controls initially
+  showControls();
 
   // Progress bar with hover tooltip
   video.addEventListener("timeupdate", () => {
@@ -299,61 +425,16 @@ function initVideoControls(movieId) {
     video.currentTime = pct * video.duration;
   });
 
-  // ===== Track Selectors via Probe API =====
-  async function loadTrackInfo() {
-    try {
-      const resp = await fetch(`/api/videoTracks?path=data/movies/${encodeURIComponent(movieId)}.mp4`);
-      if (!resp.ok) return;
-      const data = await resp.json();
-
-      // Populate audio select — ALWAYS show
-      if (data.audio && data.audio.length >= 1) {
-        audioSelect.innerHTML = "";
-        for (let i = 0; i < data.audio.length; i++) {
-          const a = data.audio[i];
-          const lang = a.language !== "und" ? ` [${a.language}]` : "";
-          const option = document.createElement("option");
-          option.value = a.index;
-          option.textContent = `Audio: ${a.title || "Track " + a.index}${lang}`;
-          if (i === 0) option.selected = true;
-          audioSelect.appendChild(option);
-        }
-        audioSelectWrapper.style.display = "flex";
-      } else {
-        // No audio tracks detected — still show a placeholder so user sees it
-        audioSelect.innerHTML = `<option value="">Audio: None detected</option>`;
-        audioSelectWrapper.style.display = "flex";
-      }
-
-      // Populate subtitle select — ALWAYS show
-      if (data.subtitles && data.subtitles.length > 0) {
-        subtitleSelect.innerHTML = '<option value="-1">Subs: Off</option>';
-        for (const s of data.subtitles) {
-          const lang = s.language !== "und" ? ` [${s.language}]` : "";
-          const option = document.createElement("option");
-          option.value = s.index;
-          option.textContent = `${s.title || "Sub " + s.index}${lang}`;
-          subtitleSelect.appendChild(option);
-        }
-        subSelectWrapper.style.display = "flex";
-      } else {
-        subtitleSelect.innerHTML = `<option value="-1">Subs: None detected</option>`;
-        subSelectWrapper.style.display = "flex";
-      }
-    } catch (e) {
-      console.log("Could not load track info:", e);
-    }
-  }
-
-  // Load track info when video metadata is ready
+  // Update the time display when video metadata is ready.
+  // (Track info is already baked into the HTML before the video is created.)
   video.addEventListener("loadedmetadata", () => {
     timeDisplay.textContent = `0:00 / ${formatTimeLong(video.duration)}`;
-    loadTrackInfo();
   });
 
   // ===== Keyboard Shortcuts =====
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+    showControls();
     switch (e.key) {
       case " ":
         e.preventDefault();
@@ -370,15 +451,7 @@ function initVideoControls(movieId) {
         break;
       case "f":
       case "F":
-        if (document.fullscreenElement) {
-          document.exitFullscreen();
-        } else {
-          const wrapper = video.closest(".video-player-wrapper");
-          if (wrapper) {
-            if (wrapper.requestFullscreen) wrapper.requestFullscreen();
-            else if (wrapper.webkitRequestFullscreen) wrapper.webkitRequestFullscreen();
-          }
-        }
+        toggleFullscreen();
         break;
       case "m":
       case "M":

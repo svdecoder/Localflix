@@ -333,6 +333,49 @@ img {
   max-height: 70vh;
 }
 
+/* ===== Subtitle Styling =====
+   Remove the default black background box behind subtitles.
+   (Positioning is handled server-side via VTT line:85% injection,
+   which works across all browsers.) */
+video::cue {
+  background: none;
+  background-color: transparent;
+  color: #ffffff;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 4px rgba(0, 0, 0, 0.8),
+    0 0 8px rgba(0, 0, 0, 0.6);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 3.15rem; /* 3x the original 1.05rem */
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Ensure cue background is fully transparent in all browsers */
+video::cue {
+  background-image: none;
+}
+
+video::-webkit-media-text-track-display {
+  margin-bottom: 4vh; /* Extra lift for WebKit browsers */
+}
+
+video::-webkit-media-text-track-container {
+  bottom: 0;
+}
+
+video::-webkit-media-text-track-display-backdrop {
+  background: transparent !important;
+}
+
+video::-webkit-media-text-track-background {
+  background: transparent !important;
+}
+
+video::-webkit-media-text-track-display {
+  background: transparent !important;
+}
+
 .video-controls-overlay {
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
   padding: 32px 16px 12px;
@@ -340,13 +383,13 @@ img {
   bottom: 0;
   left: 0;
   right: 0;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.3s ease;
 }
 
-.video-player-wrapper:hover .video-controls-overlay,
-.video-player-wrapper:fullscreen .video-controls-overlay {
-  opacity: 1;
+.video-player-wrapper.controls-hidden .video-controls-overlay {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .video-player-wrapper:fullscreen {

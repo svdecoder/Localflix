@@ -19,6 +19,7 @@ import addSerie from "./scripts/addSerie.js";
 import addEpisodeHandler from "./scripts/addEpisode.js";
 import { getVideoTracks } from "./scripts/videoProbe.js";
 import dbConfig from "./scripts/dbConfig.js";
+import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
 
 const app = express();
@@ -313,6 +314,81 @@ app.get("/api/videoTracks", async (req, res) => {
   } catch (err) {
     console.error("Error probing video:", err);
     res.status(500).json({ error: "Failed to probe video" });
+  }
+});
+
+// Subtitle extraction endpoint (serves embedded subtitles as WebVTT for <track> elements)
+app.get("/api/subtitle", async (req, res) => {
+  const filePath = req.query.path;
+  const index = parseInt(req.query.index, 10);
+  if (!filePath || isNaN(index)) {
+    return res.status(400).json({ error: "Missing path or index parameter" });
+  }
+
+  const normalized = path.normalize(filePath);
+  if (normalized.includes("..")) {
+    return res.status(403).json({ error: "Invalid path" });
+  }
+  const fullPath = path.join(__dirname, normalized);
+
+  try {
+    const tracks = await getVideoTracks(fullPath);
+    const relIdx = tracks.subtitles.findIndex((s) => s.index === index);
+    if (relIdx < 0) {
+      return res.status(404).json({ error: "Subtitle track not found" });
+    }
+
+    res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache");
+
+    // Extract the subtitle as WebVTT, then transform the stream to:
+    //   1. Inject `line:85%` into every cue so subtitles render higher
+    //      on the video (like VLC) — this is the cross-browser reliable
+    //      way to position cues (CSS `::cue { line: ... }` is not supported).
+    //   2. Ensure the output starts with a proper WEBVTT header.
+    const ffmpegProc = ffmpeg(fullPath)
+      .outputOptions(["-map", `0:s:${relIdx}`, "-f", "webvtt"])
+      .on("error", (err) => {
+        console.error("[Subtitle] Extraction error:", err.message);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Failed to extract subtitle" });
+        } else {
+          res.end();
+        }
+      });
+
+    let firstChunk = true;
+    ffmpegProc.pipe(
+      new (await import("stream")).Transform({
+        transform(chunk, _enc, callback) {
+          let text = chunk.toString("utf8");
+
+          // On the first chunk, strip any BOM and ensure the WEBVTT header
+          if (firstChunk) {
+            firstChunk = false;
+            text = text.replace(/^\uFEFF/, "");
+            if (!text.startsWith("WEBVTT")) {
+              text = "WEBVTT\n\n" + text;
+            }
+          }
+
+          // Inject `line:85%` into every cue timing line that doesn't
+          // already have a line/position setting.
+          text = text.replace(
+            /^(\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}\.\d{3})(?!.*\bline:)(.*)$/gm,
+            "$1 line:85%$2"
+          );
+
+          callback(null, Buffer.from(text, "utf8"));
+        },
+      }),
+      { end: true }
+    ).pipe(res);
+  } catch (err) {
+    console.error("[Subtitle] Extraction error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to extract subtitle" });
+    }
   }
 });
 
