@@ -40,33 +40,82 @@ async function dataParser () {
 
 function renderTags(tags) {
   if (!tags) return "";
-  return `<span class="tag-list">` + String(tags)
+  const tagArray = String(tags)
     .split(",")
     .map(t => t.trim())
-    .filter(t => t.length > 0)
+    .filter(t => t.length > 0);
+  if (tagArray.length === 0) return "";
+  return `<span class="tag-list">` + tagArray
     .map(t => `<span class="tag-bubble">${t}</span>`)
     .join("") + `</span>`;
 }
 
+// After rendering, check if tag lists overflow and add a "+N more" indicator
+function addTagOverflowIndicators() {
+  document.querySelectorAll('#serie .tag-list, #movie .tag-list').forEach(tagList => {
+    const allBubbles = Array.from(tagList.querySelectorAll('.tag-bubble'));
+    if (allBubbles.length === 0) return;
+    
+    // Check if content overflows the 3-line clamp
+    if (tagList.scrollHeight > tagList.clientHeight) {
+      // Count how many bubbles are fully visible
+      const listRect = tagList.getBoundingClientRect();
+      let visibleCount = 0;
+      for (const bubble of allBubbles) {
+        const bubbleRect = bubble.getBoundingClientRect();
+        if (bubbleRect.bottom <= listRect.bottom + 1) {
+          visibleCount++;
+        } else {
+          break;
+        }
+      }
+      const hiddenCount = allBubbles.length - visibleCount;
+      if (hiddenCount > 0) {
+        // Remove hidden bubbles
+        for (let i = visibleCount; i < allBubbles.length; i++) {
+          allBubbles[i].remove();
+        }
+        // Add "+N more" bubble at the end
+        const moreBubble = document.createElement('span');
+        moreBubble.className = 'tag-bubble tag-more';
+        moreBubble.textContent = `+${hiddenCount} more`;
+        tagList.appendChild(moreBubble);
+        
+        // If the "+N more" bubble is still clipped, remove more bubbles until it fits
+        let safety = 0;
+        while (tagList.scrollHeight > tagList.clientHeight && safety < 20) {
+          const bubbles = tagList.querySelectorAll('.tag-bubble:not(.tag-more)');
+          if (bubbles.length === 0) break;
+          bubbles[bubbles.length - 1].remove();
+          safety++;
+        }
+      }
+    }
+  });
+}
+
 function domInserter(dataArray, viewerType, divName) {
+  let html = "";
   for (let i = 0; i < dataArray.length; i++) {
     let thumbnail = dataArray[i][0];
     thumbnail = String(thumbnail).replace(/ /g, "");
     let tags = dataArray[i][1];
     let title = dataArray[i][2];
     let identifier = dataArray[i][3];
-    document.getElementById(divName).innerHTML += `
-    <a href="/${viewerType}?id=${identifier}">
-    <button class="elementVideo">
-      <img src=${thumbnail} onerror="this.onerror=null; this.src='api/images/default_thumbnail.jpg';" class="videoButtonImage"><br>
-      <span class="title">${title}</span><br>
-      ${renderTags(tags)}
-    </button>
+    html += `
+    <a href="/${viewerType}?id=${identifier}" class="video-link">
+      <div class="elementVideo">
+        <img src=${thumbnail} onerror="this.onerror=null; this.src='api/images/default_thumbnail.jpg';" class="videoButtonImage">
+        <span class="title">${title}</span>
+        ${renderTags(tags)}
+      </div>
     </a>`
   }
+  document.getElementById(divName).innerHTML = html;
 };
 
 dataParser().then(data => {
   domInserter(data[0], 'serieDisplay', 'serie');  
   domInserter(data[1], 'viewerM', 'movie');
+  addTagOverflowIndicators();
 });

@@ -7,6 +7,15 @@ function formatBytes(bytes) {
   return (bytes / Math.pow(1024, i)).toFixed(1) + " " + units[i];
 }
 
+// Format watch time: show minutes when under an hour, otherwise show hours with one decimal
+function formatWatchHours(hours) {
+  if (hours < 1) {
+    const minutes = Math.round(hours * 60);
+    return minutes + " min";
+  }
+  return hours.toFixed(1) + " h";
+}
+
 // ===== Monitoring Studio =====
 async function loadStats() {
   try {
@@ -26,7 +35,7 @@ async function loadStats() {
     document.getElementById("statTotalVideos").textContent = data.counts.totalVideos;
     document.getElementById("statPending").textContent = data.counts.pending;
 
-    document.getElementById("statWatchHours").textContent = data.stats.totalWatchHours;
+    document.getElementById("statWatchHours").textContent = formatWatchHours(data.stats.totalWatchHours);
     document.getElementById("statTags").textContent = data.stats.uniqueTags;
     document.getElementById("statNewThisWeek").textContent =
       data.stats.newMoviesThisWeek + data.stats.newSeriesThisWeek;

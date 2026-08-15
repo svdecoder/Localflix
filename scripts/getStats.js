@@ -30,10 +30,19 @@ function query(sql, params = []) {
       password: dbConfig.password,
       database: dbConfig.database,
     });
+
+    // Prevent unhandled 'error' events (e.g. ECONNREFUSED) after end()
+    con.on("error", (err) => {
+      reject(err);
+    });
+
     con.connect((err) => {
-      if (err) { con.end(); return reject(err); }
+      if (err) {
+        try { con.end(); } catch (_) {}
+        return reject(err);
+      }
       con.query(sql, params, (err, rows) => {
-        con.end();
+        try { con.end(); } catch (_) {}
         if (err) return reject(err);
         resolve(rows);
       });
@@ -42,16 +51,27 @@ function query(sql, params = []) {
 }
 
 export default async function getStats() {
-  const [movieCount, serieCount, episodeCount, totalLength, totalTags, recentMovies, recentSeries, episodeLength] = await Promise.all([
+  const [movieCount, serieCount, episodeCount, totalLength, movieTagRows, serieTagRows, recentMovies, recentSeries, episodeLength] = await Promise.all([
     query("SELECT COUNT(*) AS count FROM movie"),
     query("SELECT COUNT(*) AS count FROM series"),
     query("SELECT COUNT(*) AS count FROM episodes"),
     query("SELECT COALESCE(SUM(length_minutes), 0) AS total FROM movie"),
-    query("SELECT COUNT(DISTINCT tags) AS count FROM movie WHERE tags IS NOT NULL AND tags != ''"),
+    query("SELECT tags FROM movie WHERE tags IS NOT NULL AND tags != ''"),
+    query("SELECT tags FROM series WHERE tags IS NOT NULL AND tags != ''"),
     query("SELECT COUNT(*) AS count FROM movie WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"),
     query("SELECT COUNT(*) AS count FROM series WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"),
     query("SELECT COALESCE(SUM(length_minutes), 0) AS total FROM episodes"),
   ]);
+
+  // Count individual unique tags (comma-separated) across both movies and series
+  const tagSet = new Set();
+  for (const row of [...movieTagRows, ...serieTagRows]) {
+    const rawTags = row.tags || "";
+    for (const tag of rawTags.split(",")) {
+      const trimmed = String(tag).trim();
+      if (trimmed) tagSet.add(trimmed);
+    }
+  }
 
   // Disk usage
   const moviesDir = path.join(__dirname, "..", "data", "movies");
@@ -80,16 +100,21 @@ export default async function getStats() {
     }
   } catch (_) {}
 
-  const movieMinutes = totalLength[0]?.total || 0;
-  const episodeMinutes = episodeLength[0]?.total || 0;
+  // MySQL SUM/COUNT return strings/BigInt — coerce to numbers to avoid string concatenation
+  const movieMinutes = Number(totalLength[0]?.total) || 0;
+  const episodeMinutes = Number(episodeLength[0]?.total) || 0;
   const totalWatchMinutes = movieMinutes + episodeMinutes;
+
+  const nMovieCount = Number(movieCount[0]?.count) || 0;
+  const nSerieCount = Number(serieCount[0]?.count) || 0;
+  const nEpisodeCount = Number(episodeCount[0]?.count) || 0;
 
   return {
     counts: {
-      movies: movieCount[0]?.count || 0,
-      series: serieCount[0]?.count || 0,
-      episodes: episodeCount[0]?.count || 0,
-      totalVideos: (movieCount[0]?.count || 0) + (episodeCount[0]?.count || 0),
+      movies: nMovieCount,
+      series: nSerieCount,
+      episodes: nEpisodeCount,
+      totalVideos: nMovieCount + nEpisodeCount,
       pending: pendingCount,
     },
     disk: {
@@ -103,10 +128,10 @@ export default async function getStats() {
       totalMovieMinutes: movieMinutes,
       totalEpisodeMinutes: episodeMinutes,
       totalWatchMinutes,
-      totalWatchHours: Math.round(totalWatchMinutes / 60),
-      uniqueTags: totalTags[0]?.count || 0,
-      newMoviesThisWeek: recentMovies[0]?.count || 0,
-      newSeriesThisWeek: recentSeries[0]?.count || 0,
+      totalWatchHours: +(totalWatchMinutes / 60).toFixed(1),
+      uniqueTags: tagSet.size,
+      newMoviesThisWeek: Number(recentMovies[0]?.count) || 0,
+      newSeriesThisWeek: Number(recentSeries[0]?.count) || 0,
     },
   };
 }

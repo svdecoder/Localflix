@@ -26,6 +26,8 @@ import getStats from "./scripts/getStats.js";
 import wipeData from "./scripts/wipeData.js";
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
+import { getJobPublic, subscribe } from "./scripts/jobManager.js";
+import { restartJob, cancelJob } from "./scripts/ffmpegJob.js";
 
 const app = express();
 const PORT = 3000;
@@ -447,8 +449,90 @@ app.get("/api/subtitle", async (req, res) => {
   }
 });
 
+// ===== Job Management API =====
+// Track ffmpeg conversion jobs with live logs, progress, restart and cancel
+
+// Get job status + logs
+app.get("/api/job/:id", (req, res) => {
+  const job = getJobPublic(req.params.id);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json(job);
+});
+
+// Restart a failed/stalled/cancelled job
+app.post("/api/job/:id/restart", async (req, res) => {
+  try {
+    const job = await restartJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    res.json(getJobPublic(job.id));
+  } catch (err) {
+    console.error("Error restarting job:", err);
+    res.status(500).json({ error: "Failed to restart job" });
+  }
+});
+
+// Cancel a running job
+app.post("/api/job/:id/cancel", (req, res) => {
+  const job = cancelJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json(getJobPublic(job.id));
+});
+
+// SSE stream for live job logs + progress
+app.get("/api/job/:id/stream", (req, res) => {
+  const job = getJobPublic(req.params.id);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  // Send initial state
+  res.write(`data: ${JSON.stringify({ type: "snapshot", job })}\n\n`);
+
+  const unsubscribe = subscribe(job.id, {
+    onLog: (line) => {
+      res.write(`data: ${JSON.stringify({ type: "log", line })}\n\n`);
+    },
+    onStatus: (status) => {
+      res.write(`data: ${JSON.stringify({ type: "status", status })}\n\n`);
+    },
+    onProgress: (progress) => {
+      res.write(`data: ${JSON.stringify({ type: "progress", progress })}\n\n`);
+    },
+  });
+
+  req.on("close", () => {
+    unsubscribe();
+    res.end();
+  });
+});
+
 // ===== Chunked Upload System =====
 // Solves Cloudflare 100MB limit by splitting uploads into 25MB chunks
+
+// Check upload status — which chunks have already been received (for resume)
+app.get("/api/uploadStatus", (req, res) => {
+  const uploadId = req.query.uploadId;
+  if (!uploadId) return res.status(400).json({ error: "Missing uploadId" });
+
+  const chunkDir = path.join(__dirname, "data", "uploads", uploadId);
+  if (!fs.existsSync(chunkDir)) {
+    return res.json({ receivedChunks: [], totalChunks: 0 });
+  }
+
+  try {
+    const chunkFiles = fs.readdirSync(chunkDir)
+      .filter(f => f.startsWith("chunk_"))
+      .sort();
+    const receivedChunks = chunkFiles.map(f => parseInt(f.replace("chunk_", ""), 10));
+    res.json({ receivedChunks, totalChunks: receivedChunks.length });
+  } catch (err) {
+    console.error("Error checking upload status:", err);
+    res.status(500).json({ error: "Failed to check upload status" });
+  }
+});
 
 // Receive a single chunk (raw binary, 25MB max)
 app.post("/api/chunkUpload", express.raw({ type: "application/octet-stream", limit: "30mb" }), (req, res) => {
@@ -694,11 +778,11 @@ app.get("/add-movie", (req, res) => {
 
 app.post("/add-movie", upload.none(), async (req, res) => {
   try {
-    await addMovieHandler(req);
-    res.redirect("/");
+    const job = await addMovieHandler(req);
+    res.json({ jobId: job.id, status: job.status });
   } catch (err) {
     console.error("Error adding movie:", err);
-    res.status(500).send("Failed to add movie. Check server logs.");
+    res.status(500).json({ error: "Failed to add movie. Check server logs." });
   }
 });
 
@@ -722,11 +806,11 @@ app.get("/add-episode", (req, res) => {
 
 app.post("/add-episode", upload.none(), async (req, res) => {
   try {
-    await addEpisodeHandler(req);
-    res.redirect("/");
+    const job = await addEpisodeHandler(req);
+    res.json({ jobId: job.id, status: job.status });
   } catch (err) {
     console.error("Error adding episode:", err);
-    res.status(500).send("Failed to add episode. Check server logs.");
+    res.status(500).json({ error: "Failed to add episode. Check server logs." });
   }
 });
 
@@ -735,4 +819,32 @@ app.use("/", express.static(path.join(__dirname, "public/html")));
 
 app.listen(PORT, () => {
   console.log(`Localflix running on http://localhost:${PORT}`);
+});
+// Delete an episode by identifier
+app.delete("/api/episode/:id", async (req, res) => {
+  const id = String(req.params.id).replace(/[^A-Za-z0-9._\-]/g, "");
+  if (!id) return res.status(400).json({ error: "Invalid episode ID" });
+
+  const mysql = await import("mysql2");
+
+  const con = mysql.createConnection({
+    host: dbConfig.host,
+    user: "root",
+    password: dbConfig.password,
+    database: dbConfig.database,
+  });
+
+  await new Promise((resolve, reject) => {
+    con.connect((err) => {
+      if (err) { con.end(); return reject(err); }
+      con.query("DELETE FROM episodes WHERE identifier = ?", [id], (err, result) => {
+        con.end();
+        if (err) return reject(err);
+        resolve(result);
+      });
+    });
+  });
+
+  console.log(`[Delete] Episode deleted: ${id}`);
+  res.json({ success: true });
 });
