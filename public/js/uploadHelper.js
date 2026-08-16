@@ -73,7 +73,10 @@ export async function uploadVideoWithRetry(file, { onProgress = () => {}, onStat
     }
 
     if (!success) {
-      throw new Error(`Failed to upload chunk ${i + 1}/${totalChunks} after ${MAX_CHUNK_RETRIES} attempts: ${lastError?.message || "Unknown error"}`);
+      const err = new Error(`Failed to upload chunk ${i + 1}/${totalChunks} after ${MAX_CHUNK_RETRIES} attempts: ${lastError?.message || "Unknown error"}`);
+      err.uploadId = uploadId;
+      err.recoverable = true;
+      throw err;
     }
 
     receivedSet.add(i);
@@ -87,8 +90,13 @@ export async function uploadVideoWithRetry(file, { onProgress = () => {}, onStat
     body: JSON.stringify({ uploadId, originalName: file.name }),
   });
   if (!assembleResp.ok) {
-    const err = await assembleResp.json().catch(() => ({ error: "Assembly failed" }));
-    throw new Error(err.error || "Assembly failed");
+    const errBody = await assembleResp.json().catch(() => ({ error: "Assembly failed" }));
+    const err = new Error(errBody.error || "Assembly failed");
+    // All chunks are already safely stored server-side at this point, so a
+    // retry just needs to re-attempt assembly — not re-upload anything.
+    err.uploadId = uploadId;
+    err.recoverable = true;
+    throw err;
   }
   const data = await assembleResp.json();
   return { uploadId, ...data };

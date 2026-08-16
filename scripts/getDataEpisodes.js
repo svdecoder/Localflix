@@ -24,7 +24,7 @@ export default async function getDataEpisodes(title, season) {
         con.end();
         return reject(err);
       }
-      const sql = "SELECT * FROM episodes WHERE serie_id = ? AND season = ?";
+      const sql = "SELECT * FROM episodes WHERE serie_id = ? AND season = ? ORDER BY episode ASC";
       con.query(sql, [title, season], (err, result) => {
         con.end();
         if (err) return reject(err);

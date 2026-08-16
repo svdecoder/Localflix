@@ -30,7 +30,7 @@ const RETRY_DELAY_MS = 3000;
  * @param {function} options.databaseAdd - Async function to insert into DB after conversion
  * @returns {Promise<object>} The job object
  */
-export default async function runFfmpegJob(options) {
+export default function runFfmpegJob(options) {
   const {
     type,
     inputPath,
@@ -50,7 +50,22 @@ export default async function runFfmpegJob(options) {
   // Store the databaseAdd function on the job so restartJob can use it
   job.databaseAdd = databaseAdd;
 
-  // Run with retries
+  // IMPORTANT: do NOT await the conversion here. The caller (the /add-movie
+  // and /add-episode route handlers) needs the job id back immediately so the
+  // browser can open an SSE connection to /api/job/:id/stream and watch live
+  // progress. Awaiting the full ffmpeg run (which can take many minutes) would
+  // keep the HTTP request pending the whole time, which is what caused the
+  // "Failed to start processing" error on the frontend.
+  runWithRetries(job, { inputPath, outputPath, thumbnailPath, probeData, options: jobOpts, databaseAdd }).catch((err) => {
+    // runWithRetries already reports failures onto the job/log; this catch is
+    // just a safety net so a truly unexpected error can't crash the process.
+    console.error(`[Job ${job.id}] Unhandled processing error:`, err);
+  });
+
+  return job;
+}
+
+async function runWithRetries(job, { inputPath, outputPath, thumbnailPath, probeData, options: jobOpts, databaseAdd }) {
   let lastError = null;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 1) {
@@ -238,8 +253,13 @@ async function runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, pro
 
 /**
  * Restart a failed/stalled/cancelled job.
+ * Returns as soon as the restart has been kicked off (job status "running"),
+ * without waiting for the conversion to actually finish — the caller (the
+ * /api/job/:id/restart route) needs to respond right away so the frontend's
+ * existing SSE subscription keeps receiving progress. See runFfmpegJob() for
+ * the same reasoning.
  * @param {string} jobId
- * @returns {Promise<object|null>} The restarted job, or null if not found
+ * @returns {Promise<object|null>} The job, or null if not found
  */
 export async function restartJob(jobId) {
   const job = getJob(jobId);
@@ -253,7 +273,7 @@ export async function restartJob(jobId) {
     return job;
   }
 
-  // Re-probe the file (it may have changed)
+  // Re-probe the file (it may have changed) — fast enough to do before responding
   const probeData = await new Promise((res) => {
     ffmpeg.ffprobe(inputPath, (err, meta) => {
       if (err) { res(null); return; }
@@ -265,20 +285,14 @@ export async function restartJob(jobId) {
   resetJob(job.id);
   setJobStatus(job.id, "running");
 
-  try {
-    await runSingleAttempt(job, {
-      inputPath,
-      outputPath,
-      thumbnailPath,
-      probeData,
-      options,
+  runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, probeData, options })
+    .then(() => job.databaseAdd(job))
+    .then(() => setJobStatus(job.id, "completed"))
+    .catch((err) => {
+      appendLog(job.id, `[ERROR] ${err.message}`);
+      if (job.status !== "cancelled") setJobStatus(job.id, "failed", err.message);
     });
-    await job.databaseAdd(job);
-    setJobStatus(job.id, "completed");
-  } catch (err) {
-    appendLog(job.id, `[ERROR] ${err.message}`);
-    setJobStatus(job.id, "failed", err.message);
-  }
+
   return job;
 }
 

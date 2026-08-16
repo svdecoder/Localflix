@@ -45,6 +45,7 @@
       <input type="file" accept="video/*" id="episodeFile">
       <input type="hidden" id="stagedFile" name="stagedFile" value="">
       <div class="upload-status" id="probeStatus"></div>
+      <button type="button" id="retryUploadBtn" class="btn-submit" style="display:none;background:var(--danger);margin-bottom:16px;">↻ Retry Upload</button>
 
       <div id="trackSelection" style="display:none;">
         <label>Audio Tracks</label>
@@ -81,6 +82,12 @@
     const submitBtn = document.getElementById("submitBtn");
     const uploadStatus = document.getElementById("uploadStatus");
     const form = document.getElementById("episodeForm");
+    const retryUploadBtn = document.getElementById("retryUploadBtn");
+
+    // Kept around so a failed upload can be manually retried without
+    // re-selecting the file or losing chunks already received by the server.
+    let pendingFile = null;
+    let pendingUploadId = null;
 
     // Terminal view for ffmpeg process
     const terminalView = createTerminalView();
@@ -156,18 +163,19 @@
       }
     });
 
-    fileInput.addEventListener("change", async function () {
-      const file = this.files[0];
-      if (!file) return;
+    async function startUpload(file, resumeUploadId = null) {
+      pendingFile = file;
+      retryUploadBtn.style.display = "none";
 
       trackDiv.style.display = "none";
       submitBtn.disabled = true;
       stagedInput.value = "";
       probeStatus.className = "upload-status active processing";
-      probeStatus.textContent = "Uploading video in chunks...";
+      probeStatus.textContent = resumeUploadId ? "Resuming upload..." : "Uploading video in chunks...";
 
       try {
         const data = await uploadVideoWithRetry(file, {
+          uploadId: resumeUploadId,
           onProgress: (pct, chunk, total) => {
             probeStatus.textContent = `Uploading... ${pct}% (chunk ${chunk}/${total})`;
           },
@@ -176,6 +184,7 @@
           },
         });
 
+        pendingUploadId = null;
         stagedInput.value = data.stagedFile;
 
         const audioTracks = data.tracks.audio || [];
@@ -217,7 +226,24 @@
       } catch (err) {
         probeStatus.className = "upload-status active error";
         probeStatus.textContent = `Error: ${err.message}. Ensure FFmpeg is installed on the server.`;
+
+        if (err.recoverable && err.uploadId) {
+          pendingUploadId = err.uploadId;
+          retryUploadBtn.style.display = "inline-block";
+        }
       }
+    }
+
+    retryUploadBtn.addEventListener("click", () => {
+      if (!pendingFile) return;
+      startUpload(pendingFile, pendingUploadId);
+    });
+
+    fileInput.addEventListener("change", async function () {
+      const file = this.files[0];
+      if (!file) return;
+      pendingUploadId = null;
+      await startUpload(file);
     });
 
     // SRT subtitle upload

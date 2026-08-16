@@ -825,26 +825,43 @@ app.delete("/api/episode/:id", async (req, res) => {
   const id = String(req.params.id).replace(/[^A-Za-z0-9._\-]/g, "");
   if (!id) return res.status(400).json({ error: "Invalid episode ID" });
 
-  const mysql = await import("mysql2");
+  try {
+    // Look up the episode first so we know which serie folder its files live in
+    const rows = await getDataEpisode(id);
+    const episode = rows && rows[0];
+    if (!episode) return res.status(404).json({ error: "Episode not found" });
 
-  const con = mysql.createConnection({
-    host: dbConfig.host,
-    user: "root",
-    password: dbConfig.password,
-    database: dbConfig.database,
-  });
+    const serie = String(episode.serie_id).replace(/[^A-Za-z0-9._\- ]+/g, "");
+    const episodePath = path.join(__dirname, "data", "serie", serie, `${id}.mp4`);
+    const thumbnailPath = path.join(__dirname, "data", "thumbnail", serie, `${id}.jpg`);
 
-  await new Promise((resolve, reject) => {
-    con.connect((err) => {
-      if (err) { con.end(); return reject(err); }
-      con.query("DELETE FROM episodes WHERE identifier = ?", [id], (err, result) => {
-        con.end();
-        if (err) return reject(err);
-        resolve(result);
+    try { fs.unlinkSync(episodePath); } catch (_) {}
+    try { fs.unlinkSync(thumbnailPath); } catch (_) {}
+
+    const mysql = await import("mysql2");
+
+    const con = mysql.createConnection({
+      host: dbConfig.host,
+      user: "root",
+      password: dbConfig.password,
+      database: dbConfig.database,
+    });
+
+    await new Promise((resolve, reject) => {
+      con.connect((err) => {
+        if (err) { con.end(); return reject(err); }
+        con.query("DELETE FROM episodes WHERE identifier = ?", [id], (err, result) => {
+          con.end();
+          if (err) return reject(err);
+          resolve(result);
+        });
       });
     });
-  });
 
-  console.log(`[Delete] Episode deleted: ${id}`);
-  res.json({ success: true });
+    console.log(`[Delete] Episode deleted: ${id}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting episode:", err);
+    res.status(500).json({ error: "Failed to delete episode" });
+  }
 });
