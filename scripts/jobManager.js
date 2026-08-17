@@ -9,6 +9,13 @@ emitter.setMaxListeners(200);
 const STALL_TIMEOUT_MS = 120000; // 2 minutes
 const STALL_CHECK_INTERVAL_MS = 15000;
 
+// How long to keep a finished job's data in memory before evicting it. This
+// gives the frontend plenty of time to display the final status/log, while
+// preventing the in-memory job map from growing forever over a long-running
+// server process. cleanupJob() itself already existed but was never called
+// anywhere — this is the one place that now calls it.
+const JOB_RETENTION_MS = 30 * 60 * 1000; // 30 minutes
+
 export function createJob(type, payload) {
   const id = crypto.randomUUID();
   const job = {
@@ -72,6 +79,14 @@ export function setJobStatus(jobId, status, error = null) {
   }
   if (status === "completed" || status === "failed" || status === "cancelled") {
     job.finishedAt = Date.now();
+    // Evict the job from memory after a grace period, unless it gets
+    // restarted (moved back to "running") in the meantime.
+    setTimeout(() => {
+      const current = jobs.get(jobId);
+      if (current && current.status === status) {
+        cleanupJob(jobId);
+      }
+    }, JOB_RETENTION_MS);
   }
   emitter.emit("status", jobId, status);
 }
@@ -102,7 +117,13 @@ export function killJobProcess(jobId) {
 export function resetJob(jobId) {
   const job = jobs.get(jobId);
   if (!job) return;
-  job.log = [];
+  // NOTE: job.log is intentionally NOT cleared here. resetJob() runs before
+  // every retry attempt and every manual restart, and wiping the log at that
+  // point was destroying the "[RETRY] Attempt N starting..." / "[RESTART]
+  // Manual restart requested" lines the instant they were written, along
+  // with all history from earlier attempts. Keeping the log intact lets the
+  // user (and anyone debugging) see the full sequence of what happened
+  // across every attempt for this job.
   job.progress = 0;
   job.error = null;
   job.stalled = false;
@@ -115,6 +136,10 @@ export function resetJob(jobId) {
 
 export function cleanupJob(jobId) {
   jobs.delete(jobId);
+}
+
+export function getRunningJobs() {
+  return Array.from(jobs.values()).filter((j) => j.status === "running");
 }
 
 export function subscribe(jobId, handlers) {

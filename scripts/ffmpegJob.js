@@ -68,9 +68,23 @@ export default function runFfmpegJob(options) {
 async function runWithRetries(job, { inputPath, outputPath, thumbnailPath, probeData, options: jobOpts, databaseAdd }) {
   let lastError = null;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    // Check for cancellation before starting a new attempt — this catches a
+    // cancel request that arrived while we were sleeping between retries,
+    // which previously got silently overridden by the next attempt's
+    // resetJob()/setJobStatus("running") calls.
+    if (job.status === "cancelled") {
+      return job;
+    }
+
     if (attempt > 1) {
       appendLog(job.id, `[RETRY] Attempt ${attempt}/${MAX_RETRIES} starting in ${RETRY_DELAY_MS / 1000}s...`);
       await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+
+      // Re-check immediately after the sleep — the whole point of this
+      // window is that cancellation can happen while we're waiting.
+      if (job.status === "cancelled") {
+        return job;
+      }
     }
 
     try {
@@ -103,8 +117,32 @@ async function runWithRetries(job, { inputPath, outputPath, thumbnailPath, probe
     }
   }
 
+  // All retries exhausted. Deliberately NOT deleting inputPath here, even
+  // though it's tempting to clean it up: the staged upload is exactly what
+  // restartJob() needs to attempt a manual restart later (it checks
+  // fs.existsSync(inputPath) and refuses to restart if it's gone). Auto-
+  // deleting on failure would silently break the "Restart" button for every
+  // job that exhausts its retries. Orphaned staged uploads are still
+  // reachable via "Wipe pending uploads" in Config — which, since the M7 fix,
+  // now refuses to run while any job is actively processing.
   setJobStatus(job.id, "failed", lastError?.message || "Unknown error");
   return job;
+}
+
+// Pick a safe timestamp for thumbnail extraction. Previously this was
+// hardcoded to 20s in, which silently failed (no thumbnail, no error surfaced
+// to the user) for any clip shorter than 20 seconds. Uses the source
+// duration from probeData when available, otherwise falls back to 1s.
+function pickThumbnailTimestamp(probeData) {
+  const duration = parseFloat(probeData?.format?.duration);
+  if (!duration || isNaN(duration) || duration <= 0) return "00:00:01";
+  // Aim for the 20s mark, but stay well before the end of short clips.
+  const target = Math.min(20, duration * 0.9);
+  const seconds = Math.max(1, Math.floor(target));
+  const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
+  const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+  const s = String(seconds % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
 }
 
 async function runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, probeData, options }) {
@@ -218,8 +256,9 @@ async function runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, pro
     cmd.on("end", () => {
       appendLog(job.id, `[FFmpeg] Conversion complete: ${outputPath}`);
       // Generate thumbnail
+      const thumbTimestamp = pickThumbnailTimestamp(probeData);
       ffmpeg(outputPath)
-        .outputOptions(["-ss", "00:00:20", "-vframes", "1", "-q:v", "3", "-vf", "scale=300:-1"])
+        .outputOptions(["-ss", thumbTimestamp, "-vframes", "1", "-q:v", "3", "-vf", "scale=300:-1"])
         .save(thumbnailPath)
         .on("end", () => {
           appendLog(job.id, "[FFmpeg] Thumbnail generated successfully!");
@@ -232,9 +271,22 @@ async function runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, pro
           resolve();
         })
         .on("error", (err) => {
-          appendLog(job.id, `[FFmpeg] Thumbnail generation failed: ${err.message}`);
-          try { fs.unlinkSync(inputPath); } catch (_) {}
-          resolve();
+          appendLog(job.id, `[FFmpeg] Thumbnail generation at ${thumbTimestamp} failed: ${err.message}`);
+          // Fall back to grabbing the very first frame — this should succeed
+          // for essentially any playable video, regardless of duration.
+          ffmpeg(outputPath)
+            .outputOptions(["-ss", "00:00:00", "-vframes", "1", "-q:v", "3", "-vf", "scale=300:-1"])
+            .save(thumbnailPath)
+            .on("end", () => {
+              appendLog(job.id, "[FFmpeg] Thumbnail generated from first frame (fallback).");
+              try { fs.unlinkSync(inputPath); } catch (_) {}
+              resolve();
+            })
+            .on("error", (fallbackErr) => {
+              appendLog(job.id, `[FFmpeg] Fallback thumbnail generation also failed: ${fallbackErr.message}`);
+              try { fs.unlinkSync(inputPath); } catch (_) {}
+              resolve();
+            });
         });
     });
 

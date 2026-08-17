@@ -89,6 +89,11 @@ async function wipeTarget(target) {
 let ffmpegConfig = null;
 let currentPresetKey = "1080p";
 
+// This is a client-side fallback only, used if /api/ffmpegConfig can't be
+// reached — it can't literally share code with the server (browser vs
+// Node), so it's a plain copy. The single source of truth for the actual
+// defaults is scripts/ffmpegConfig.js's DEFAULT_CONFIG; keep this in sync
+// with that if the presets ever change.
 const DEFAULT_CONFIG = {
   presets: {
     "480p": { scale: "854:480", videoBitrate: "1000k", maxrate: "1200k", bufsize: "2000k" },

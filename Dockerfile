@@ -16,6 +16,7 @@ COPY server.js ./
 COPY scripts/ ./scripts/
 COPY public/ ./public/
 COPY data/images/ ./data/images/
+COPY config/ ./config/
 
 # Create data directories for volumes
 RUN mkdir -p data/movies data/serie data/thumbnail data/uploads

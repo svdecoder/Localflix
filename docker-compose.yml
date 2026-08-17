@@ -6,8 +6,12 @@ services:
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-localflix}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-    ports:
-      - "3306:3306"
+    # Not publishing 3306 to the host by default — the "app" service reaches
+    # this container over the internal Compose network at db:3306 without it.
+    # Uncomment below only if you need to connect a host-side DB client for
+    # debugging; prefer binding to 127.0.0.1 rather than all interfaces.
+    # ports:
+    #   - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./data/mysql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -31,6 +35,7 @@ services:
       - ./data/serie:/app/data/serie
       - ./data/thumbnail:/app/data/thumbnail
       - ./data/uploads:/app/data/uploads
+      - ./config:/app/config
     depends_on:
       db:
         condition: service_healthy

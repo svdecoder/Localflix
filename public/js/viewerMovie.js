@@ -70,7 +70,11 @@ async function domInserter() {
       const a = trackData.audio[i];
       const lang = a.language !== "und" ? ` [${a.language}]` : "";
       const selected = i === 0 ? " selected" : "";
-      audioOptions += `<option value="${a.index}"${selected}>Audio: ${escapeHtml(a.title || "Track " + a.index)}${lang}</option>`;
+      // data-position is the audio track's position among audio streams only
+      // (0-based) — this lines up with the browser's video.audioTracks list,
+      // which is what we actually need to switch tracks (a.index is the
+      // absolute ffprobe stream index, not usable here).
+      audioOptions += `<option value="${a.index}" data-position="${i}"${selected}>Audio: ${escapeHtml(a.title || "Track " + a.index)}${lang}</option>`;
     }
   } else {
     audioOptions = `<option value="">Audio: None detected</option>`;
@@ -403,6 +407,29 @@ function initVideoControls(movieId) {
     }
   }
   subtitleSelect.addEventListener("change", applySubtitleTrack);
+
+  // Audio track selection — HTMLMediaElement.audioTracks is only supported
+  // in Chromium-based browsers (Chrome, Edge, Opera). Firefox and Safari have
+  // no API to switch embedded audio tracks client-side, so on those browsers
+  // we disable the selector rather than silently doing nothing.
+  if (audioSelect && audioSelect.options.length > 1) {
+    if ("audioTracks" in video) {
+      function applyAudioTrack() {
+        const selectedOption = audioSelect.options[audioSelect.selectedIndex];
+        const position = parseInt(selectedOption?.dataset.position, 10);
+        if (isNaN(position) || !video.audioTracks) return;
+        for (let i = 0; i < video.audioTracks.length; i++) {
+          video.audioTracks[i].enabled = i === position;
+        }
+      }
+      // audioTracks may populate asynchronously once metadata loads
+      video.addEventListener("loadedmetadata", applyAudioTrack, { once: true });
+      audioSelect.addEventListener("change", applyAudioTrack);
+    } else {
+      audioSelect.disabled = true;
+      audioSelect.title = "Switching audio tracks isn't supported in this browser (try Chrome or Edge)";
+    }
+  }
 
   function formatTime(seconds) {
     if (isNaN(seconds) || !isFinite(seconds)) return "0:00";

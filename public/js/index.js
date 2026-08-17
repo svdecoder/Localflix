@@ -11,6 +11,21 @@ async function fetchApi() {
   }
 }
 
+function escapeHtml(str) {
+  if (!str) return "";
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function escapeAttr(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 async function dataParser () {
   let dataArray = await fetchApi();
     serieData = []
@@ -46,7 +61,7 @@ function renderTags(tags) {
     .filter(t => t.length > 0);
   if (tagArray.length === 0) return "";
   return `<span class="tag-list">` + tagArray
-    .map(t => `<span class="tag-bubble">${t}</span>`)
+    .map(t => `<span class="tag-bubble">${escapeHtml(t)}</span>`)
     .join("") + `</span>`;
 }
 
@@ -103,10 +118,10 @@ function domInserter(dataArray, viewerType, divName) {
     let title = dataArray[i][2];
     let identifier = dataArray[i][3];
     html += `
-    <a href="/${viewerType}?id=${identifier}" class="video-link">
+    <a href="/${viewerType}?id=${encodeURIComponent(identifier)}" class="video-link">
       <div class="elementVideo">
-        <img src=${thumbnail} onerror="this.onerror=null; this.src='api/images/default_thumbnail.jpg';" class="videoButtonImage">
-        <span class="title">${title}</span>
+        <img src="${escapeAttr(thumbnail)}" onerror="this.onerror=null; this.src='api/images/default_thumbnail.jpg';" class="videoButtonImage">
+        <span class="title">${escapeHtml(title)}</span>
         ${renderTags(tags)}
       </div>
     </a>`

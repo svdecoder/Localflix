@@ -26,8 +26,9 @@ import getStats from "./scripts/getStats.js";
 import wipeData from "./scripts/wipeData.js";
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
-import { getJobPublic, subscribe } from "./scripts/jobManager.js";
+import { getJobPublic, subscribe, getRunningJobs } from "./scripts/jobManager.js";
 import { restartJob, cancelJob } from "./scripts/ffmpegJob.js";
+import { getFfmpegConfig, FFMPEG_CONFIG_PATH, DEFAULT_FFMPEG_CONFIG } from "./scripts/ffmpegConfig.js";
 
 const app = express();
 const PORT = 3000;
@@ -109,7 +110,6 @@ app.get("/stream/serie/:serie/:id", (req, res) => {
 
 // Static file serving
 app.use("/data/thumbnail", express.static(path.join(__dirname, "data/thumbnail")));
-app.use("/data/movie", express.static(path.join(__dirname, "data/movies")));
 app.use("/data/serie", express.static(path.join(__dirname, "data/serie")));
 app.use("/api/images", express.static(path.join(__dirname, "data/images")));
 app.use("/js", express.static(path.join(__dirname, "public/js")));
@@ -514,7 +514,7 @@ app.get("/api/job/:id/stream", (req, res) => {
 
 // Check upload status — which chunks have already been received (for resume)
 app.get("/api/uploadStatus", (req, res) => {
-  const uploadId = req.query.uploadId;
+  const uploadId = String(req.query.uploadId || "").replace(/[^A-Za-z0-9._\-]/g, "");
   if (!uploadId) return res.status(400).json({ error: "Missing uploadId" });
 
   const chunkDir = path.join(__dirname, "data", "uploads", uploadId);
@@ -536,7 +536,7 @@ app.get("/api/uploadStatus", (req, res) => {
 
 // Receive a single chunk (raw binary, 25MB max)
 app.post("/api/chunkUpload", express.raw({ type: "application/octet-stream", limit: "30mb" }), (req, res) => {
-  const uploadId = req.headers["x-upload-id"];
+  const uploadId = String(req.headers["x-upload-id"] || "").replace(/[^A-Za-z0-9._\-]/g, "");
   const chunkIndex = parseInt(req.headers["x-chunk-index"], 10);
   const totalChunks = parseInt(req.headers["x-total-chunks"], 10);
   const originalName = req.headers["x-original-name"] || "video";
@@ -561,7 +561,8 @@ app.post("/api/chunkUpload", express.raw({ type: "application/octet-stream", lim
 
 // Assemble all chunks into final file, then probe it
 app.post("/api/chunkAssemble", express.json(), async (req, res) => {
-  const { uploadId, originalName } = req.body;
+  const uploadId = String(req.body.uploadId || "").replace(/[^A-Za-z0-9._\-]/g, "");
+  const originalName = req.body.originalName;
   if (!uploadId) return res.status(400).json({ error: "Missing uploadId" });
 
   const chunkDir = path.join(__dirname, "data", "uploads", uploadId);
@@ -649,36 +650,12 @@ app.post("/api/uploadSrt", srtUpload.single("srt"), async (req, res) => {
 });
 
 // ===== Config / Stats / Wipe API =====
-const FFMPEG_CONFIG_PATH = path.join(__dirname, "config", "ffmpegPresets.json");
-
-const DEFAULT_FFMPEG_CONFIG = {
-  presets: {
-    "480p": { scale: "854:480", videoBitrate: "1000k", maxrate: "1200k", bufsize: "2000k" },
-    "720p": { scale: "1280:720", videoBitrate: "2500k", maxrate: "3000k", bufsize: "5000k" },
-    "1080p": { scale: "1920:1080", videoBitrate: "5000k", maxrate: "6000k", bufsize: "10000k" },
-    "1440p": { scale: "2560:1440", videoBitrate: "8000k", maxrate: "10000k", bufsize: "16000k" },
-    "original": null
-  },
-  encoding: {
-    preset: "fast",
-    crf: "23",
-    pix_fmt: "yuv420p",
-    movflags: "+faststart",
-    audioCodec: "aac",
-    audioChannels: "2",
-    subtitleCodec: "mov_text"
-  }
-};
-
+// FFMPEG_CONFIG_PATH / DEFAULT_FFMPEG_CONFIG are imported from
+// scripts/ffmpegConfig.js (single source of truth), rather than duplicated
+// here — this used to be a second hand-copied definition that had to be
+// kept manually in sync with the one the actual encoder uses.
 function readFfmpegConfig() {
-  try {
-    if (fs.existsSync(FFMPEG_CONFIG_PATH)) {
-      return JSON.parse(fs.readFileSync(FFMPEG_CONFIG_PATH, "utf-8"));
-    }
-  } catch (err) {
-    console.error("Error reading ffmpeg config:", err);
-  }
-  return JSON.parse(JSON.stringify(DEFAULT_FFMPEG_CONFIG));
+  return getFfmpegConfig();
 }
 
 // Get library stats
@@ -698,6 +675,20 @@ app.post("/api/wipe", async (req, res) => {
   if (!target || !["movies", "series", "uploads", "all"].includes(target)) {
     return res.status(400).json({ error: "Invalid wipe target" });
   }
+
+  // Wiping "uploads" (or "all", which includes uploads) deletes everything
+  // under data/uploads — including the staged input file of any job that's
+  // actively encoding right now. Block it instead of letting ffmpeg's input
+  // disappear out from under it mid-run.
+  if (target === "uploads" || target === "all") {
+    const runningJobs = getRunningJobs();
+    if (runningJobs.length > 0) {
+      return res.status(409).json({
+        error: `Cannot wipe uploads while ${runningJobs.length} job(s) are still processing. Wait for them to finish or cancel them first.`,
+      });
+    }
+  }
+
   try {
     const result = await wipeData(target);
     res.json({ success: true, ...result });
@@ -864,4 +855,17 @@ app.delete("/api/episode/:id", async (req, res) => {
     console.error("Error deleting episode:", err);
     res.status(500).json({ error: "Failed to delete episode" });
   }
+});
+
+// Global error-handling middleware — MUST be registered after every route.
+// Without this, errors that reach Express via next(err) (which is exactly
+// what happens when a multer fileFilter rejects a file, e.g. uploading a
+// non-.srt file to /api/uploadSrt) fall through to Express's default error
+// handler, which renders an HTML stack-trace page. The frontend always does
+// `await resp.json()` on error responses, so an HTML body made that throw a
+// confusing parse error instead of showing the actual validation message.
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  if (res.headersSent) return next(err);
+  res.status(err.status || 400).json({ error: err.message || "Something went wrong" });
 });

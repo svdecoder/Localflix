@@ -25,6 +25,9 @@ const DEFAULT_CONFIG = {
   }
 };
 
+export const FFMPEG_CONFIG_PATH = CONFIG_PATH;
+export const DEFAULT_FFMPEG_CONFIG = DEFAULT_CONFIG;
+
 export function getFfmpegConfig() {
   try {
     if (fs.existsSync(CONFIG_PATH)) {

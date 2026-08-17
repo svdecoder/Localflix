@@ -26,10 +26,10 @@ export default async function vidIdentifiers(numberOfVid) {
         con.end();
         return reject(err);
       }
-      const sql = `(SELECT identifier AS id, title, tags, type FROM series ORDER BY created_at DESC LIMIT ?)
+      const sql = `(SELECT identifier AS id, title, tags, type, created_at FROM series ORDER BY created_at DESC LIMIT ?)
 UNION ALL
-(SELECT identifier AS id, title, tags, type FROM movie ORDER BY created_at DESC LIMIT ?)
-ORDER BY id DESC`;
+(SELECT identifier AS id, title, tags, type, created_at FROM movie ORDER BY created_at DESC LIMIT ?)
+ORDER BY created_at DESC`;
       con.query(sql, [numberOfVid, numberOfVid], (err, result) => {
         con.end();
         if (err) return reject(err);

@@ -7,6 +7,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const USAGE = `
+Standalone maintenance CLI — NOT called by the running app (server.js) or
+any UI action. Run manually from the command line if you need to re-mux an
+existing file, e.g. after fixing a subtitle-mapping bug or adding SRTs to
+something uploaded before that feature existed.
+
 Usage:
   node scripts/reprocessSubtitles.js <input.mp4> [srtFiles...]
 
@@ -135,13 +140,19 @@ async function main() {
   // Map all audio streams (copy codec — no re-encode)
   audioStreams.forEach((_a, i) => mapOpts.push("-map", `0:a:${i}`));
 
-  // Map text subtitle streams from the input, converting to mov_text
-  let textSubRelIdx = 0;
-  for (const sub of subStreams) {
-    if (!TEXT_SUB_CODECS.has(sub.codec_name)) continue;
-    mapOpts.push("-map", `0:s:${textSubRelIdx}`);
-    textSubRelIdx++;
-  }
+  // Map text subtitle streams from the input, converting to mov_text.
+  // IMPORTANT: ffmpeg's `-map 0:s:N` addresses the Nth subtitle stream
+  // OVERALL (any codec), not the Nth *text* subtitle stream. This used to
+  // count only text subs seen so far, which mis-mapped streams whenever a
+  // bitmap subtitle appeared before a text one in the file (e.g. subtitle
+  // order [bitmap, text] would map the text sub as index 0, grabbing the
+  // bitmap stream instead). Using the position within subStreams — which
+  // includes every subtitle stream, text and bitmap alike — matches what
+  // ffmpeg actually expects. Same fix already applied in ffmpegJob.js.
+  subStreams.forEach((sub, relIdx) => {
+    if (!TEXT_SUB_CODECS.has(sub.codec_name)) return;
+    mapOpts.push("-map", `0:s:${relIdx}`);
+  });
 
   // Map external SRT inputs as additional subtitle streams
   for (let i = 0; i < srtFiles.length; i++) {

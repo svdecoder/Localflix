@@ -28,7 +28,7 @@ CREATE TABLE `episodes` (
   `season` int DEFAULT NULL,
   `description` varchar(255) DEFAULT NULL,
   `date` date DEFAULT NULL,
-  `created_at` datetime DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `serie_id` varchar(255) NOT NULL,
   `title` varchar(255) DEFAULT NULL,
   `length_minutes` int DEFAULT NULL,

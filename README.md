@@ -56,9 +56,11 @@ The easiest way to run Localflix is with Docker Compose:
 git clone https://github.com/svdecoder/Localflix.git
 cd Localflix
 
-# Configure environment
-cp data/mysql/.env.example data/mysql/.env
-# Edit data/mysql/.env and set secure passwords
+# Configure environment — this .env goes in the project root, next to
+# docker-compose.yml. It's a different file from data/mysql/.env (see the
+# "Environment Variables" section below for why there are two).
+cp .env.example .env
+# Edit .env and set a secure MYSQL_ROOT_PASSWORD
 
 # Start the stack
 docker compose up -d
@@ -101,14 +103,29 @@ Open **http://localhost:3000** in your browser.
 
 ## Environment Variables
 
-Copy `data/mysql/.env.example` to `data/mysql/.env` and configure:
+Localflix uses **two separate `.env` files**, depending on how you're running it — using the wrong one for your setup is a common source of "can't connect to database" errors:
+
+| File | Used by | When |
+|------|---------|------|
+| `.env` (project root, from `.env.example`) | The root `docker-compose.yml` — both the `db` service (password substitution) and the `app` container (`env_file`) | **Quick Start (Docker)** — running the full stack with `docker compose up -d` |
+| `data/mysql/.env` (from `data/mysql/.env.example`) | `data/mysql/docker-compose.yaml` (MySQL-only container) and `node server.js` directly | **Manual Setup** — running MySQL in Docker but the app with plain Node |
+
+### Root `.env` (Docker Quick Start)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MYSQL_ROOT_PASSWORD` | MySQL root password — the app always connects as `root` | *(required)* |
+| `MYSQL_DATABASE` | Database name | `localflix` |
+| `HOST` | MySQL host as seen from inside the `app` container | `db` (must stay `db` — this is the Compose service name, not `localhost`) |
+
+### `data/mysql/.env` (Manual Setup)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `MYSQL_PASSWORD` | MySQL user password | *(required)* |
 | `MYSQL_ROOT_PASSWORD` | MySQL root password | *(required)* |
 | `DATABASE` | Database name | `localflix` |
-| `HOST` | MySQL host | `localhost` (use `db` for Docker) |
+| `HOST` | MySQL host | `localhost` |
 
 ## Project Structure
 
