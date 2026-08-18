@@ -61,7 +61,7 @@
       <input type="file" accept=".srt" id="srtFiles" multiple>
       <div id="srtList" style="margin-bottom:16px;"></div>
       <input type="hidden" id="srtStaged" name="srtStaged" value="">
-      <p class="track-hint">Upload .srt subtitle files to embed as selectable subtitle tracks.</p>
+      <p class="track-hint">Upload .srt subtitle files. Each becomes a separate subtitle track with its own sync offset (adjustable later from the video page, no re-processing needed) — pick its language below.</p>
 
       <div class="upload-status" id="uploadStatus"></div>
 
@@ -246,18 +246,64 @@
       await startUpload(file);
     });
 
-    // SRT subtitle upload
+    // SRT subtitle upload — each file gets a language picker; the selected
+    // language is stored alongside the staged filename and, after the
+    // movie/episode is created, becomes a sidecar subtitle's language field.
+    const SUBTITLE_LANGUAGES = [
+      ["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"],
+      ["it", "Italian"], ["pt", "Portuguese"], ["ru", "Russian"], ["ja", "Japanese"],
+      ["ko", "Korean"], ["zh", "Chinese"], ["ar", "Arabic"], ["hi", "Hindi"],
+    ];
+
     const srtInput = document.getElementById("srtFiles");
     const srtList = document.getElementById("srtList");
     const srtStaged = document.getElementById("srtStaged");
-    const stagedSrts = [];
+    const stagedSrts = []; // [{ filename, originalName, language }]
+
+    function updateSrtStagedValue() {
+      srtStaged.value = stagedSrts.map((s) => `${s.filename}|${s.language}`).join(",");
+    }
+
+    function renderSrtList() {
+      srtList.innerHTML = stagedSrts.map((s, idx) => `
+        <div style="display:flex;align-items:center;gap:8px;font-size:0.85rem;margin-top:4px;">
+          <span style="color:var(--success);">✓ ${escapeHtml(s.originalName)}</span>
+          <select class="srt-lang-select" data-idx="${idx}" style="max-width:140px;">
+            ${SUBTITLE_LANGUAGES.map(([code, label]) => `<option value="${code}"${s.language === code ? " selected" : ""}>${label}</option>`).join("")}
+            <option value="other"${!SUBTITLE_LANGUAGES.some(([c]) => c === s.language) ? " selected" : ""}>Other…</option>
+          </select>
+          <input type="text" class="srt-lang-other" data-idx="${idx}" placeholder="code" maxlength="20"
+            style="width:70px;display:${!SUBTITLE_LANGUAGES.some(([c]) => c === s.language) ? "inline-block" : "none"};"
+            value="${!SUBTITLE_LANGUAGES.some(([c]) => c === s.language) ? escapeAttr(s.language) : ""}">
+        </div>
+      `).join("");
+
+      srtList.querySelectorAll(".srt-lang-select").forEach((sel) => {
+        sel.addEventListener("change", () => {
+          const idx = parseInt(sel.dataset.idx, 10);
+          const otherInput = srtList.querySelector(`.srt-lang-other[data-idx="${idx}"]`);
+          if (sel.value === "other") {
+            otherInput.style.display = "inline-block";
+            stagedSrts[idx].language = otherInput.value.trim() || "und";
+          } else {
+            otherInput.style.display = "none";
+            stagedSrts[idx].language = sel.value;
+          }
+          updateSrtStagedValue();
+        });
+      });
+      srtList.querySelectorAll(".srt-lang-other").forEach((inp) => {
+        inp.addEventListener("input", () => {
+          const idx = parseInt(inp.dataset.idx, 10);
+          stagedSrts[idx].language = inp.value.trim() || "und";
+          updateSrtStagedValue();
+        });
+      });
+    }
 
     srtInput.addEventListener("change", async function () {
       const files = Array.from(this.files);
       if (files.length === 0) return;
-
-      srtList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem;">Uploading subtitles...</span>';
-      stagedSrts.length = 0;
 
       for (const file of files) {
         if (!file.name.toLowerCase().endsWith(".srt")) continue;
@@ -271,13 +317,13 @@
             continue;
           }
           const data = await resp.json();
-          stagedSrts.push(data.srtFile + "|" + file.name.replace(/\.srt$/i, ""));
-          srtList.innerHTML += `<div style="color:var(--success);font-size:0.85rem;">✓ ${escapeHtml(file.name)}</div>`;
+          stagedSrts.push({ filename: data.srtFile, originalName: file.name, language: "en" });
         } catch (err) {
           srtList.innerHTML += `<div style="color:var(--danger);font-size:0.85rem;">${escapeHtml(file.name)}: Upload failed</div>`;
         }
       }
-      srtStaged.value = stagedSrts.join(",");
+      renderSrtList();
+      updateSrtStagedValue();
     });
 
     // ===== Series Autocomplete =====

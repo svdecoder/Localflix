@@ -496,6 +496,52 @@ video::-webkit-media-text-track-display {
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* Sidecar subtitle management panel (below the video, on the page's normal
+   background — needs its own button style rather than reusing .ctrl-btn,
+   which is designed for the dark video-controls overlay). */
+.subtitle-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.subtitle-panel h4 {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.subtitle-panel .subtitle-row {
+  color: var(--text-primary);
+}
+
+.subtitle-panel .sub-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.subtitle-panel .sub-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent);
+}
+
+.subtitle-panel select,
+.subtitle-panel input[type="file"],
+.subtitle-panel input[type="text"] {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 0.85rem;
+}
+
 /* Volume boost button */
 .boost-label {
   font-size: 0.7rem;

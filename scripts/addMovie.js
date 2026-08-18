@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import dbConfig from "./dbConfig.js";
 import runFfmpegJob from "./ffmpegJob.js";
+import { addSubtitle } from "./subtitles.js";
 
 function inputSanitize(input) {
   return String(input).replace(/[^A-Za-z0-9._\- ]+/g, "");
@@ -45,14 +46,18 @@ export default async function addMovieHandler(req) {
         .filter((n) => !isNaN(n))
     : [];
 
+  // External .srt uploads no longer get muxed into the video container (see
+  // scripts/ffmpegJob.js) — instead they become sidecar subtitles once the
+  // movie row exists, so their sync offset can be adjusted later without
+  // re-encoding. srtStaged entries are "filename|language" pairs.
   const srtEntries = [];
   if (req.body.srtStaged) {
     const parts = String(req.body.srtStaged).split(",").filter(Boolean);
     for (const part of parts) {
-      const [srtFilename, label] = part.split("|");
+      const [srtFilename, language] = part.split("|");
       const srtPath = path.join(__dirname, "..", "data", "uploads", inputSanitize(srtFilename));
       if (fs.existsSync(srtPath)) {
-        srtEntries.push({ path: srtPath, label: inputSanitize(label || "External") });
+        srtEntries.push({ path: srtPath, language: inputSanitize(language || "und"), originalFilename: srtFilename });
       }
     }
   }
@@ -83,14 +88,35 @@ export default async function addMovieHandler(req) {
       quality,
       selectedAudioIndexes,
       selectedSubtitleIndexes,
-      srtEntries,
     },
     databaseAdd: async () => {
       await databaseAdd(metadata, identifiers, newMovie);
+      await attachStagedSubtitles(identifiers, srtEntries);
     },
   });
 
   return job;
+}
+
+// Convert each staged .srt into a sidecar subtitle now that the movie row
+// exists (so we know its identifier). Best-effort: one bad subtitle file
+// shouldn't fail the whole upload, since the movie itself already succeeded.
+async function attachStagedSubtitles(identifiers, srtEntries) {
+  for (const entry of srtEntries) {
+    try {
+      await addSubtitle({
+        mediaType: "movie",
+        mediaId: identifiers,
+        language: entry.language,
+        originalFilename: entry.originalFilename,
+        srtPath: entry.path,
+      });
+    } catch (err) {
+      console.error(`Failed to attach subtitle "${entry.originalFilename}" to movie ${identifiers}:`, err.message);
+    } finally {
+      try { fs.unlinkSync(entry.path); } catch (_) {}
+    }
+  }
 }
 
 async function databaseAdd(metadata, identifiers, newMovie) {

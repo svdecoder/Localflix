@@ -29,6 +29,7 @@ import fs from "fs";
 import { getJobPublic, subscribe, getRunningJobs } from "./scripts/jobManager.js";
 import { restartJob, cancelJob } from "./scripts/ffmpegJob.js";
 import { getFfmpegConfig, FFMPEG_CONFIG_PATH, DEFAULT_FFMPEG_CONFIG } from "./scripts/ffmpegConfig.js";
+import { addSubtitle, getSubtitles, getSubtitleById, deleteSubtitle, updateSubtitleOffset, deleteSubtitlesForMedia } from "./scripts/subtitles.js";
 
 const app = express();
 const PORT = 3000;
@@ -111,6 +112,7 @@ app.get("/stream/serie/:serie/:id", (req, res) => {
 // Static file serving
 app.use("/data/thumbnail", express.static(path.join(__dirname, "data/thumbnail")));
 app.use("/data/serie", express.static(path.join(__dirname, "data/serie")));
+app.use("/data/subtitles", express.static(path.join(__dirname, "data/subtitles")));
 app.use("/api/images", express.static(path.join(__dirname, "data/images")));
 app.use("/js", express.static(path.join(__dirname, "public/js")));
 app.use("/css", express.static(path.join(__dirname, "public/css")));
@@ -161,6 +163,7 @@ app.delete("/api/movie/:id", async (req, res) => {
   try {
     try { fs.unlinkSync(moviePath); } catch (_) {}
     try { fs.unlinkSync(thumbnailPath); } catch (_) {}
+    try { await deleteSubtitlesForMedia("movie", id); } catch (_) {}
 
     const mysql = await import("mysql2");
 
@@ -310,19 +313,33 @@ app.delete("/api/serie/:title", async (req, res) => {
       database: dbConfig.database,
     });
 
-    await new Promise((resolve, reject) => {
+    // Grab the episode identifiers first — subtitle rows key on the episode's
+    // identifier, not the series title, so we need this list to clean up
+    // their sidecar subtitles after the DB delete cascades.
+    const episodeIds = await new Promise((resolve, reject) => {
       con.connect((err) => {
         if (err) { con.end(); return reject(err); }
-        con.query("DELETE FROM episodes WHERE serie_id = ?", [title], (err) => {
+        con.query("SELECT identifier FROM episodes WHERE serie_id = ?", [title], (err, rows) => {
           if (err) { con.end(); return reject(err); }
-          con.query("DELETE FROM series WHERE title = ?", [title], (err, result) => {
-            con.end();
-            if (err) return reject(err);
-            resolve(result);
-          });
+          resolve(rows.map((r) => r.identifier));
         });
       });
     });
+
+    await new Promise((resolve, reject) => {
+      con.query("DELETE FROM episodes WHERE serie_id = ?", [title], (err) => {
+        if (err) { con.end(); return reject(err); }
+        con.query("DELETE FROM series WHERE title = ?", [title], (err, result) => {
+          con.end();
+          if (err) return reject(err);
+          resolve(result);
+        });
+      });
+    });
+
+    for (const episodeId of episodeIds) {
+      try { await deleteSubtitlesForMedia("episode", episodeId); } catch (_) {}
+    }
 
     console.log(`[Delete] Series deleted: ${title}`);
     res.json({ success: true });
@@ -649,6 +666,122 @@ app.post("/api/uploadSrt", srtUpload.single("srt"), async (req, res) => {
   });
 });
 
+// ===== Sidecar Subtitle API =====
+// These operate on the `subtitles` table (WebVTT sidecar files with an
+// adjustable offset), separate from subtitle tracks muxed into a video's
+// container (which are handled via /api/videoTracks and /api/subtitle).
+
+const VALID_MEDIA_TYPES = ["movie", "episode"];
+
+// Verify the referenced movie/episode actually exists before attaching a
+// subtitle to it — mediaId is already sanitized against path traversal
+// downstream, but this additionally prevents orphan subtitle rows/files
+// pointing at media that was never created (or was already deleted).
+async function mediaExists(mediaType, mediaId) {
+  if (mediaType === "movie") {
+    const rows = await getDataMovie(mediaId);
+    return rows && rows.length > 0;
+  }
+  if (mediaType === "episode") {
+    const rows = await getDataEpisode(mediaId);
+    return rows && rows.length > 0;
+  }
+  return false;
+}
+
+// Finalize a previously staged .srt (via /api/uploadSrt) into a persisted
+// sidecar subtitle for a specific movie/episode. Used for the "add subtitle
+// after upload" flow from the viewer pages.
+app.post("/api/subtitles", async (req, res) => {
+  const { mediaType, mediaId, language, srtFile, originalName } = req.body || {};
+
+  if (!VALID_MEDIA_TYPES.includes(mediaType)) {
+    return res.status(400).json({ error: "mediaType must be 'movie' or 'episode'" });
+  }
+  const safeMediaId = String(mediaId || "").replace(/[^A-Za-z0-9._\- ]+/g, "");
+  if (!safeMediaId) return res.status(400).json({ error: "mediaId is required" });
+  const safeSrtFile = String(srtFile || "").replace(/[^A-Za-z0-9._\-]/g, "");
+  if (!safeSrtFile) return res.status(400).json({ error: "srtFile is required (upload via /api/uploadSrt first)" });
+
+  try {
+    if (!(await mediaExists(mediaType, safeMediaId))) {
+      return res.status(404).json({ error: `No ${mediaType} found with that ID` });
+    }
+
+    const srtPath = path.join(__dirname, "data", "uploads", safeSrtFile);
+    if (!fs.existsSync(srtPath)) {
+      return res.status(400).json({ error: "Staged subtitle file not found — please re-upload it" });
+    }
+
+    const subtitle = await addSubtitle({
+      mediaType,
+      mediaId: safeMediaId,
+      language,
+      originalFilename: originalName || safeSrtFile,
+      srtPath,
+    });
+
+    try { fs.unlinkSync(srtPath); } catch (_) {}
+
+    res.json(subtitle);
+  } catch (err) {
+    console.error("Error adding subtitle:", err);
+    res.status(500).json({ error: "Failed to add subtitle" });
+  }
+});
+
+// List sidecar subtitles for a movie/episode
+app.get("/api/subtitles", async (req, res) => {
+  const { mediaType, mediaId } = req.query;
+  if (!VALID_MEDIA_TYPES.includes(mediaType)) {
+    return res.status(400).json({ error: "mediaType must be 'movie' or 'episode'" });
+  }
+  const safeMediaId = String(mediaId || "").replace(/[^A-Za-z0-9._\- ]+/g, "");
+  if (!safeMediaId) return res.status(400).json({ error: "mediaId is required" });
+
+  try {
+    const subtitles = await getSubtitles(mediaType, safeMediaId);
+    res.json(subtitles);
+  } catch (err) {
+    console.error("Error listing subtitles:", err);
+    res.status(500).json({ error: "Failed to list subtitles" });
+  }
+});
+
+// Adjust a subtitle's sync offset (metadata only — no re-encode, no file rewrite)
+app.patch("/api/subtitles/:id/offset", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid subtitle ID" });
+  const { offsetMs } = req.body || {};
+  if (offsetMs === undefined || isNaN(parseInt(offsetMs, 10))) {
+    return res.status(400).json({ error: "offsetMs (number, milliseconds) is required" });
+  }
+
+  try {
+    const updated = await updateSubtitleOffset(id, offsetMs);
+    res.json(updated);
+  } catch (err) {
+    console.error("Error updating subtitle offset:", err);
+    const status = err.message === "Subtitle not found" ? 404 : 500;
+    res.status(status).json({ error: err.message || "Failed to update subtitle offset" });
+  }
+});
+
+// Delete a sidecar subtitle
+app.delete("/api/subtitles/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid subtitle ID" });
+
+  try {
+    await deleteSubtitle(id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting subtitle:", err);
+    const status = err.message === "Subtitle not found" ? 404 : 500;
+    res.status(status).json({ error: err.message || "Failed to delete subtitle" });
+  }
+});
+
 // ===== Config / Stats / Wipe API =====
 // FFMPEG_CONFIG_PATH / DEFAULT_FFMPEG_CONFIG are imported from
 // scripts/ffmpegConfig.js (single source of truth), rather than duplicated
@@ -828,6 +961,7 @@ app.delete("/api/episode/:id", async (req, res) => {
 
     try { fs.unlinkSync(episodePath); } catch (_) {}
     try { fs.unlinkSync(thumbnailPath); } catch (_) {}
+    try { await deleteSubtitlesForMedia("episode", id); } catch (_) {}
 
     const mysql = await import("mysql2");
 

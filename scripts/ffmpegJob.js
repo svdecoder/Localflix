@@ -1,5 +1,6 @@
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
+import path from "path";
 import {
   createJob,
   appendLog,
@@ -15,6 +16,14 @@ import { getQualityPresets, getEncodingSettings } from "./ffmpegConfig.js";
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 3000;
 
+// Require at least this much headroom (as a multiple of the input file's
+// size) free on the output filesystem before starting an encode. The
+// temp-output file being written can approach the input's size (worst case:
+// "original" quality, no re-scaling), and the thumbnail adds a little more
+// — 1.2x is a deliberately conservative floor, not a precise prediction of
+// final output size.
+const MIN_FREE_SPACE_MULTIPLIER = 1.2;
+
 /**
  * Run an ffmpeg conversion as a tracked job.
  *
@@ -23,9 +32,8 @@ const RETRY_DELAY_MS = 3000;
  * @param {string} options.inputPath - Path to the staged uploaded file
  * @param {string} options.outputPath - Path where the converted mp4 will be written
  * @param {string} options.thumbnailPath - Path where the thumbnail jpg will be written
- * @param {string[]} options.srtPaths - External SRT file paths (additional ffmpeg inputs)
  * @param {object} options.probeData - ffprobe metadata (for stream index conversion)
- * @param {object} options.options - { quality, selectedAudioIndexes, selectedSubtitleIndexes, srtEntries }
+ * @param {object} options.options - { quality, selectedAudioIndexes, selectedSubtitleIndexes }
  * @param {object} options.metadata - { title, author, releaseDate, description, tags, serie, episode, season }
  * @param {function} options.databaseAdd - Async function to insert into DB after conversion
  * @returns {Promise<object>} The job object
@@ -102,9 +110,14 @@ async function runWithRetries(job, { inputPath, outputPath, thumbnailPath, probe
     } catch (err) {
       lastError = err;
       appendLog(job.id, `[ERROR] ${err.message}`);
-      // Clean up partial output
-      try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (_) {}
-      try { if (fs.existsSync(thumbnailPath)) fs.unlinkSync(thumbnailPath); } catch (_) {}
+      // Clean up partial/temp output. The main encode and thumbnail are both
+      // written to job-id-scoped temp paths and only renamed into their real
+      // location after validation succeeds (see runSingleAttempt), so on
+      // failure there's normally nothing at outputPath/thumbnailPath itself
+      // — these cleanups are defense-in-depth, not the primary mechanism.
+      for (const p of [outputPath, thumbnailPath, tempPathFor(outputPath, job.id), tempPathFor(thumbnailPath, job.id)]) {
+        try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_) {}
+      }
 
       if (job.status === "cancelled") {
         setJobStatus(job.id, "cancelled");
@@ -145,24 +158,125 @@ function pickThumbnailTimestamp(probeData) {
   return `${h}:${m}:${s}`;
 }
 
+// Job-id-scoped temp path for a given final path — e.g.
+// "/data/movies/abc.mp4" -> "/data/movies/.abc.mp4.tmp-<jobId>". Leading dot
+// keeps it out of any directory listing that only shows non-hidden files.
+// Scoping by job id means two attempts (or two different jobs) can never
+// collide on the same temp file even if they somehow ran concurrently.
+function tempPathFor(finalPath, jobId) {
+  const dir = path.dirname(finalPath);
+  const base = path.basename(finalPath);
+  return path.join(dir, `.${base}.tmp-${jobId}`);
+}
+
+// Check that there's enough free space on the filesystem holding
+// outputDir before starting an encode, so a doomed-to-fail job fails fast
+// with a clear reason instead of burning CPU time and then failing anyway
+// partway through with a cryptic ffmpeg I/O error. Node's fs.statfsSync is
+// available from v18.15+ (the Dockerfile uses node:18-alpine) but isn't
+// universally supported on every platform/filesystem, so this fails open —
+// if the check itself throws, we log it and proceed rather than blocking a
+// job over a diagnostic that couldn't run.
+function checkDiskSpace(outputDir, requiredBytes, jobId) {
+  try {
+    fs.mkdirSync(outputDir, { recursive: true });
+    const stats = fs.statfsSync(outputDir);
+    const freeBytes = stats.bavail * stats.bsize;
+    if (freeBytes < requiredBytes) {
+      const freeMB = (freeBytes / 1024 / 1024).toFixed(0);
+      const requiredMB = (requiredBytes / 1024 / 1024).toFixed(0);
+      throw new Error(
+        `Not enough disk space: ${freeMB}MB free, need at least ~${requiredMB}MB for this encode. Free up space or wipe old uploads before retrying.`
+      );
+    }
+    appendLog(jobId, `[DiskCheck] ${(freeBytes / 1024 / 1024).toFixed(0)}MB free — sufficient.`);
+  } catch (err) {
+    if (err.message.startsWith("Not enough disk space")) throw err;
+    // statfsSync unsupported/failed for some other reason — don't block the job over it.
+    appendLog(jobId, `[DiskCheck] Could not check free disk space (${err.message}) — proceeding anyway.`);
+  }
+}
+
+// Known failure signatures worth surfacing as a plain-English diagnosis
+// instead of leaving the user to decode raw ffmpeg/OS error text.
+const FAILURE_SIGNATURES = [
+  { pattern: /no space left on device/i, diagnosis: "The disk ran out of space during encoding." },
+  { pattern: /cannot allocate memory|out of memory/i, diagnosis: "The server ran out of memory during encoding." },
+  { pattern: /permission denied/i, diagnosis: "A file permission error occurred — check that the app can write to its data directories." },
+  { pattern: /\bkilled\b/i, diagnosis: "The ffmpeg process was killed, likely by the OS (often due to memory pressure)." },
+  { pattern: /invalid data found when processing input/i, diagnosis: "The source file appears to be corrupt or in an unsupported format." },
+  { pattern: /moov atom not found/i, diagnosis: "The source file is incomplete or corrupt (missing required MP4 metadata)." },
+];
+
+function diagnoseFailure(message) {
+  const match = FAILURE_SIGNATURES.find((sig) => sig.pattern.test(message));
+  return match ? match.diagnosis : null;
+}
+
+// Validate a freshly-encoded file before it's ever renamed into its real,
+// DB-referenced location. This is the core of "never mark a failed operation
+// as successful" — ffmpeg firing its "end" event only means the process
+// exited without error; it doesn't guarantee the resulting file is a valid,
+// playable video with the expected duration (e.g. an ENOSPC mid-write with
+// +faststart can still let the process exit in a way that looks clean).
+async function validateOutputFile(filePath, { requireDuration = true } = {}) {
+  if (!fs.existsSync(filePath)) {
+    return { valid: false, reason: "Output file does not exist after encoding" };
+  }
+  const size = fs.statSync(filePath).size;
+  if (size === 0) {
+    return { valid: false, reason: "Output file is empty (0 bytes)" };
+  }
+  if (!requireDuration) {
+    // Thumbnails: existence + nonzero size is a sufficient check — no need
+    // to ffprobe a JPEG for a "duration".
+    return { valid: true };
+  }
+
+  const probeResult = await new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, meta) => {
+      if (err) return resolve({ error: err.message });
+      resolve({ meta });
+    });
+  });
+  if (probeResult.error) {
+    return { valid: false, reason: `Output file failed validation probe: ${probeResult.error}` };
+  }
+  const duration = parseFloat(probeResult.meta?.format?.duration);
+  if (!duration || isNaN(duration) || duration <= 0) {
+    return { valid: false, reason: "Output file has no readable duration — likely truncated or corrupt" };
+  }
+  return { valid: true, duration };
+}
+
 async function runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, probeData, options }) {
-  const { quality, selectedAudioIndexes, selectedSubtitleIndexes, srtEntries } = options;
+  const { quality, selectedAudioIndexes, selectedSubtitleIndexes } = options;
 
   // Reset job state for this attempt
   resetJob(job.id);
   setJobStatus(job.id, "running");
 
+  // Fail fast if there's not enough disk space, rather than discovering it
+  // partway through a long encode.
+  const inputSize = fs.existsSync(inputPath) ? fs.statSync(inputPath).size : 0;
+  checkDiskSpace(path.dirname(outputPath), inputSize * MIN_FREE_SPACE_MULTIPLIER, job.id);
+
+  // Encode to a job-id-scoped temp path, never the final path directly —
+  // only renamed into place after validateOutputFile() confirms it's a real,
+  // playable video. This is what prevents a corrupt/truncated file (e.g.
+  // from a mid-encode crash or ENOSPC) from ever ending up at the exact path
+  // the database is about to reference.
+  const tempOutputPath = tempPathFor(outputPath, job.id);
+  const tempThumbnailPath = tempPathFor(thumbnailPath, job.id);
+  try { if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath); } catch (_) {}
+  try { if (fs.existsSync(tempThumbnailPath)) fs.unlinkSync(tempThumbnailPath); } catch (_) {}
+
   appendLog(job.id, `[FFmpeg] Starting conversion: ${inputPath}`);
   appendLog(job.id, `[FFmpeg] Output: ${outputPath}`);
-  appendLog(job.id, `[FFmpeg] Quality: ${quality}, Audio tracks: ${selectedAudioIndexes.length || "all"}, Subs: ${selectedSubtitleIndexes.length || "none"}, External SRTs: ${srtEntries.length}`);
+  appendLog(job.id, `[FFmpeg] Quality: ${quality}, Audio tracks: ${selectedAudioIndexes.length || "all"}, Subs: ${selectedSubtitleIndexes.length || "none"}`);
 
   await new Promise((resolve, reject) => {
     const cmd = ffmpeg(inputPath);
-
-    // Add each SRT as an additional input
-    for (const srt of srtEntries) {
-      cmd.input(srt.path);
-    }
 
     // Always use explicit stream mapping — never rely on ffmpeg defaults
     const mapOpts = ["-map", "0:v:0?"];
@@ -184,7 +298,10 @@ async function runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, pro
       mapOpts.push("-map", "0:a?");
     }
 
-    // Embedded subtitle mapping — filter out bitmap subtitles (PGS/HDMV) that can't be converted to mov_text
+    // Embedded subtitle mapping — filter out bitmap subtitles (PGS/HDMV) that can't be converted to mov_text.
+    // NOTE: external .srt files are handled separately (see scripts/subtitles.js) as
+    // sidecar WebVTT files, not muxed into the container — this is what lets subtitle
+    // sync offset be adjusted later without re-encoding the video.
     const textSubCodecs = ["subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text", "sami", "jacosub", "microdvd", "mpl2", "pjs", "realtext", "stl", "subviewer", "subviewer1", "vplayer", "dvb_subtitle"];
     let textSubCount = 0;
     if (selectedSubtitleIndexes.length > 0) {
@@ -200,12 +317,6 @@ async function runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, pro
           }
         }
       }
-    }
-
-    // External SRT mapping (always text-based)
-    for (let i = 0; i < srtEntries.length; i++) {
-      mapOpts.push("-map", `${i + 1}:0?`);
-      mapOpts.push(`-metadata:s:s:${textSubCount + i}`, `title=${srtEntries[i].label}`);
     }
 
     // Video encoding — always H.264 + yuv420p for browser compatibility
@@ -231,16 +342,26 @@ async function runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, pro
       "-ac", ENCODING.audioChannels || "2",
     ];
 
-    // Subtitle encoding (mov_text for MP4 compatibility)
+    // Subtitle encoding (mov_text for MP4 compatibility) — only for embedded tracks kept from the source
     const subtitleOpts = [];
-    if (textSubCount > 0 || srtEntries.length > 0) {
+    if (textSubCount > 0) {
       subtitleOpts.push("-c:s", ENCODING.subtitleCodec || "mov_text");
     }
 
-    const allOpts = [...mapOpts, ...videoOpts, ...audioOpts, ...subtitleOpts];
+    // Force the mp4 muxer explicitly. ffmpeg normally guesses the output
+    // container from the destination filename's extension — but the atomic
+    // write path above uses a temp filename like
+    // ".abc.mp4.tmp-<jobId>" (see tempPathFor), whose actual extension is
+    // ".tmp-<jobId>", not ".mp4". Without -f mp4, ffmpeg can't guess a muxer
+    // for that and fails immediately with "Unable to choose an output
+    // format" on every attempt (all 3 retries fail identically, since the
+    // problem is the fixed temp filename shape, not anything transient).
+    const formatOpts = ["-f", "mp4"];
+
+    const allOpts = [...mapOpts, ...videoOpts, ...audioOpts, ...subtitleOpts, ...formatOpts];
     appendLog(job.id, `[FFmpeg] Args: ${allOpts.join(" ")}`);
 
-    cmd.outputOptions(allOpts).save(outputPath);
+    cmd.outputOptions(allOpts).save(tempOutputPath);
 
     cmd.on("stderr", (line) => {
       appendLog(job.id, `[FFmpeg] ${line}`);
@@ -253,46 +374,86 @@ async function runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, pro
       }
     });
 
-    cmd.on("end", () => {
-      appendLog(job.id, `[FFmpeg] Conversion complete: ${outputPath}`);
-      // Generate thumbnail
+    cmd.on("end", async () => {
+      appendLog(job.id, `[FFmpeg] ffmpeg process finished — validating output before accepting it...`);
+
+      // Validate BEFORE this file is ever treated as the real output. A
+      // process exiting cleanly ("end" firing) is not the same guarantee as
+      // "this is a valid, playable video" — see validateOutputFile's comment.
+      const videoCheck = await validateOutputFile(tempOutputPath, { requireDuration: true });
+      if (!videoCheck.valid) {
+        appendLog(job.id, `[FFmpeg] Output validation FAILED: ${videoCheck.reason}`);
+        try { fs.unlinkSync(tempOutputPath); } catch (_) {}
+        reject(new Error(`Encoded file failed validation: ${videoCheck.reason}`));
+        return;
+      }
+      appendLog(job.id, `[FFmpeg] Output validated OK (duration: ${videoCheck.duration?.toFixed(1)}s).`);
+
+      // Generate thumbnail — also to a temp path, validated before it's kept.
       const thumbTimestamp = pickThumbnailTimestamp(probeData);
-      ffmpeg(outputPath)
-        .outputOptions(["-ss", thumbTimestamp, "-vframes", "1", "-q:v", "3", "-vf", "scale=300:-1"])
-        .save(thumbnailPath)
-        .on("end", () => {
-          appendLog(job.id, "[FFmpeg] Thumbnail generated successfully!");
+
+      const finishWithThumbnail = async () => {
+        const thumbCheck = await validateOutputFile(tempThumbnailPath, { requireDuration: false });
+        if (!thumbCheck.valid) {
+          // A missing/invalid thumbnail is not worth failing the whole job
+          // over — this matches the existing graceful-degradation behavior
+          // (the movie/episode just won't have a thumbnail image).
+          appendLog(job.id, `[FFmpeg] Thumbnail failed validation (${thumbCheck.reason}) — proceeding without one.`);
+          try { fs.unlinkSync(tempThumbnailPath); } catch (_) {}
+        } else {
           try {
-            fs.unlinkSync(inputPath);
-            appendLog(job.id, `[FFmpeg] Original file removed: ${inputPath}`);
+            fs.renameSync(tempThumbnailPath, thumbnailPath);
           } catch (err) {
-            appendLog(job.id, `[FFmpeg] File removal failed: ${err.message}`);
+            appendLog(job.id, `[FFmpeg] Could not move thumbnail into place: ${err.message}`);
           }
-          resolve();
-        })
+        }
+
+        // Only now — after the main output is validated AND renamed into its
+        // real location — is it safe to atomically commit and clean up.
+        try {
+          fs.renameSync(tempOutputPath, outputPath);
+          appendLog(job.id, `[FFmpeg] Conversion complete: ${outputPath}`);
+        } catch (err) {
+          try { if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath); } catch (_) {}
+          reject(new Error(`Validated output could not be moved into place: ${err.message}`));
+          return;
+        }
+
+        try {
+          fs.unlinkSync(inputPath);
+          appendLog(job.id, `[FFmpeg] Original file removed: ${inputPath}`);
+        } catch (err) {
+          appendLog(job.id, `[FFmpeg] File removal failed: ${err.message}`);
+        }
+        resolve();
+      };
+
+      ffmpeg(tempOutputPath)
+        .outputOptions(["-ss", thumbTimestamp, "-vframes", "1", "-q:v", "3", "-vf", "scale=300:-1", "-f", "image2", "-update", "1"])
+        .save(tempThumbnailPath)
+        .on("end", finishWithThumbnail)
         .on("error", (err) => {
           appendLog(job.id, `[FFmpeg] Thumbnail generation at ${thumbTimestamp} failed: ${err.message}`);
           // Fall back to grabbing the very first frame — this should succeed
           // for essentially any playable video, regardless of duration.
-          ffmpeg(outputPath)
-            .outputOptions(["-ss", "00:00:00", "-vframes", "1", "-q:v", "3", "-vf", "scale=300:-1"])
-            .save(thumbnailPath)
-            .on("end", () => {
-              appendLog(job.id, "[FFmpeg] Thumbnail generated from first frame (fallback).");
-              try { fs.unlinkSync(inputPath); } catch (_) {}
-              resolve();
-            })
+          ffmpeg(tempOutputPath)
+            .outputOptions(["-ss", "00:00:00", "-vframes", "1", "-q:v", "3", "-vf", "scale=300:-1", "-f", "image2", "-update", "1"])
+            .save(tempThumbnailPath)
+            .on("end", finishWithThumbnail)
             .on("error", (fallbackErr) => {
               appendLog(job.id, `[FFmpeg] Fallback thumbnail generation also failed: ${fallbackErr.message}`);
-              try { fs.unlinkSync(inputPath); } catch (_) {}
-              resolve();
+              try { if (fs.existsSync(tempThumbnailPath)) fs.unlinkSync(tempThumbnailPath); } catch (_) {}
+              finishWithThumbnail();
             });
         });
     });
 
     cmd.on("error", (err) => {
-      appendLog(job.id, `[FFmpeg] Conversion FAILED: ${err.message}`);
-      reject(err);
+      const diagnosis = diagnoseFailure(err.message);
+      const fullMessage = diagnosis ? `${diagnosis} (${err.message})` : err.message;
+      appendLog(job.id, `[FFmpeg] Conversion FAILED: ${fullMessage}`);
+      try { if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath); } catch (_) {}
+      reject(new Error(fullMessage));
     });
 
     // Track the underlying process for kill/restart support

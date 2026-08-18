@@ -54,6 +54,10 @@ export default async function wipeData(target) {
 
     await query("DELETE FROM movie");
     results.movies = "deleted";
+
+    // Clean up sidecar subtitles belonging to deleted movies
+    try { fs.rmSync(path.join(__dirname, "..", "data", "subtitles", "movie"), { recursive: true, force: true }); } catch (_) {}
+    await query("DELETE FROM subtitles WHERE media_type = 'movie'");
   }
 
   // Wipe series (and their episodes)
@@ -84,6 +88,10 @@ export default async function wipeData(target) {
     await query("DELETE FROM episodes");
     await query("DELETE FROM series");
     results.series = "deleted";
+
+    // Clean up sidecar subtitles belonging to deleted episodes
+    try { fs.rmSync(path.join(__dirname, "..", "data", "subtitles", "episode"), { recursive: true, force: true }); } catch (_) {}
+    await query("DELETE FROM subtitles WHERE media_type = 'episode'");
   }
 
   // Wipe pending uploads
@@ -109,9 +117,10 @@ export default async function wipeData(target) {
     const serieDir = path.join(__dirname, "..", "data", "serie");
     const thumbnailDir = path.join(__dirname, "..", "data", "thumbnail");
     const uploadsDir = path.join(__dirname, "..", "data", "uploads");
+    const subtitlesDir = path.join(__dirname, "..", "data", "subtitles");
 
     // Clear all directories
-    for (const dir of [moviesDir, serieDir, thumbnailDir, uploadsDir]) {
+    for (const dir of [moviesDir, serieDir, thumbnailDir, uploadsDir, subtitlesDir]) {
       try {
         const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
@@ -128,6 +137,7 @@ export default async function wipeData(target) {
     await query("DELETE FROM episodes");
     await query("DELETE FROM movie");
     await query("DELETE FROM series");
+    await query("DELETE FROM subtitles");
     results.all = "deleted";
   }
 

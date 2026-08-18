@@ -19,7 +19,7 @@ COPY data/images/ ./data/images/
 COPY config/ ./config/
 
 # Create data directories for volumes
-RUN mkdir -p data/movies data/serie data/thumbnail data/uploads
+RUN mkdir -p data/movies data/serie data/thumbnail data/uploads data/subtitles
 
 EXPOSE 3000
 

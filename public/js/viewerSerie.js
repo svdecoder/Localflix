@@ -33,6 +33,239 @@ function formatDuration(minutes) {
   return h > 0 ? `${h}h ${m}min` : `${m}min`;
 }
 
+// ===== Sidecar subtitle helpers (shared shape with viewerMovie.js) =====
+
+const SUBTITLE_LANGUAGES = [
+  ["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"],
+  ["it", "Italian"], ["pt", "Portuguese"], ["ru", "Russian"], ["ja", "Japanese"],
+  ["ko", "Korean"], ["zh", "Chinese"], ["ar", "Arabic"], ["hi", "Hindi"],
+];
+
+function vttTimeToMs(t) {
+  // WebVTT allows omitting the hours component when it's zero (ffmpeg's own
+  // SRT→VTT conversion does exactly this — confirmed by testing it directly:
+  // "00:01.000" rather than "00:00:01.000"), so both MM:SS.mmm and
+  // HH:MM:SS.mmm need to be accepted here.
+  const m = t.match(/^(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3})$/);
+  if (!m) return 0;
+  const [, h, mi, s, ms] = m;
+  return (parseInt(h || "0", 10) * 3600 + parseInt(mi, 10) * 60 + parseInt(s, 10)) * 1000 + parseInt(ms, 10);
+}
+
+function msToVttTime(ms) {
+  ms = Math.max(0, Math.round(ms));
+  const h = Math.floor(ms / 3600000); ms %= 3600000;
+  const m = Math.floor(ms / 60000); ms %= 60000;
+  const s = Math.floor(ms / 1000); ms %= 1000;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(ms).padStart(3, "0")}`;
+}
+
+// Shift every timestamp in a WebVTT file by offsetMs (can be negative).
+// This is the whole mechanism that lets subtitle sync be adjusted without
+// re-encoding anything — the shift happens client-side, on demand, against
+// the stored .vtt file's raw text. Always emits full HH:MM:SS.mmm timestamps
+// (valid WebVTT, and accepted by every browser) regardless of which form the
+// source used.
+function shiftVttTimestamps(vttText, offsetMs) {
+  if (!offsetMs) return vttText;
+  return vttText.replace(/(?:\d{2}:)?\d{2}:\d{2}\.\d{3}/g, (match) => msToVttTime(vttTimeToMs(match) + offsetMs));
+}
+
+/**
+ * Fetches sidecar subtitles for a media item, renders them as extra <track>
+ * elements on the video (tagged data-sidecar="1" so they're distinguishable
+ * from embedded tracks), adds matching <option>s to the subtitle selector,
+ * and renders a management panel (list + offset controls + delete + add-new)
+ * into panelEl.
+ */
+async function setupSidecarSubtitles(mediaType, mediaId, video, subtitleSelect, panelEl) {
+  let subtitles = [];
+  const blobUrls = new Map(); // subtitle id -> current blob URL, for revocation
+
+  async function fetchList() {
+    try {
+      const resp = await fetch(`/api/subtitles?mediaType=${mediaType}&mediaId=${encodeURIComponent(mediaId)}`);
+      if (!resp.ok) return [];
+      return await resp.json();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async function buildBlobUrl(sub) {
+    const resp = await fetch(`/data/subtitles/${sub.storagePath}`);
+    const text = await resp.text();
+    const shifted = shiftVttTimestamps(text, sub.offsetMs);
+    const url = URL.createObjectURL(new Blob([shifted], { type: "text/vtt" }));
+    const old = blobUrls.get(sub.id);
+    if (old) URL.revokeObjectURL(old);
+    blobUrls.set(sub.id, url);
+    return url;
+  }
+
+  async function rebuildTracksAndOptions() {
+    const previousSelection = subtitleSelect.value;
+
+    video.querySelectorAll('track[data-sidecar="1"]').forEach((t) => t.remove());
+    subtitleSelect.querySelectorAll('option[data-sidecar="1"]').forEach((o) => o.remove());
+
+    for (const sub of subtitles) {
+      const url = await buildBlobUrl(sub);
+      const trackEl = document.createElement("track");
+      trackEl.kind = "subtitles";
+      trackEl.src = url;
+      trackEl.label = `${(sub.language || "und").toUpperCase()} — ${sub.originalFilename || "subtitle"}`;
+      trackEl.dataset.key = `sidecar:${sub.id}`;
+      trackEl.dataset.sidecar = "1";
+      video.appendChild(trackEl);
+
+      const opt = document.createElement("option");
+      opt.value = `sidecar:${sub.id}`;
+      opt.dataset.sidecar = "1";
+      const offsetLabel = sub.offsetMs ? ` (${sub.offsetMs > 0 ? "+" : ""}${sub.offsetMs}ms)` : "";
+      opt.textContent = `${(sub.language || "und").toUpperCase()} — ${sub.originalFilename || "subtitle"}${offsetLabel}`;
+      subtitleSelect.appendChild(opt);
+    }
+
+    const stillExists = Array.from(subtitleSelect.options).some((o) => o.value === previousSelection);
+    subtitleSelect.value = stillExists ? previousSelection : "off";
+    subtitleSelect.dispatchEvent(new Event("change"));
+  }
+
+  function renderPanel() {
+    const listHtml = subtitles.length === 0
+      ? `<p style="color:var(--text-muted);font-size:0.85rem;">No subtitles added yet.</p>`
+      : subtitles.map((sub) => `
+        <div class="subtitle-row" style="display:flex;align-items:center;gap:8px;font-size:0.85rem;margin-bottom:6px;flex-wrap:wrap;">
+          <span style="min-width:40px;font-weight:600;">${escapeHtml((sub.language || "und").toUpperCase())}</span>
+          <span style="color:var(--text-muted);flex:1;min-width:120px;">${escapeHtml(sub.originalFilename || "subtitle.srt")}</span>
+          <span style="min-width:80px;text-align:right;">${sub.offsetMs > 0 ? "+" : ""}${sub.offsetMs} ms</span>
+          <button type="button" class="sub-btn sub-offset-btn" data-id="${sub.id}" data-delta="-500">-500</button>
+          <button type="button" class="sub-btn sub-offset-btn" data-id="${sub.id}" data-delta="-100">-100</button>
+          <button type="button" class="sub-btn sub-offset-btn" data-id="${sub.id}" data-delta="100">+100</button>
+          <button type="button" class="sub-btn sub-offset-btn" data-id="${sub.id}" data-delta="500">+500</button>
+          <button type="button" class="sub-btn sub-reset-btn" data-id="${sub.id}">Reset</button>
+          <button type="button" class="sub-btn sub-delete-btn" data-id="${sub.id}" style="color:var(--danger);">Delete</button>
+        </div>
+      `).join("");
+
+    panelEl.innerHTML = `
+      <div class="subtitle-panel">
+        <h4 style="margin-bottom:8px;">Subtitles</h4>
+        ${listHtml}
+        <div class="subtitle-add-row" style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <input type="file" accept=".srt" id="sidecarSrtInput" style="max-width:220px;">
+          <select id="sidecarLangSelect" style="max-width:130px;">
+            ${SUBTITLE_LANGUAGES.map(([code, label]) => `<option value="${code}">${label}</option>`).join("")}
+            <option value="other">Other…</option>
+          </select>
+          <input type="text" id="sidecarLangOther" placeholder="code" maxlength="20" style="width:60px;display:none;">
+          <button type="button" id="sidecarAddBtn" class="sub-btn">Add Subtitle</button>
+          <span id="sidecarAddStatus" style="font-size:0.8rem;color:var(--text-muted);"></span>
+        </div>
+      </div>
+    `;
+
+    panelEl.querySelectorAll(".sub-offset-btn").forEach((btn) => {
+      btn.addEventListener("click", () => adjustOffset(parseInt(btn.dataset.id, 10), parseInt(btn.dataset.delta, 10)));
+    });
+    panelEl.querySelectorAll(".sub-reset-btn").forEach((btn) => {
+      btn.addEventListener("click", () => setOffset(parseInt(btn.dataset.id, 10), 0));
+    });
+    panelEl.querySelectorAll(".sub-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", () => deleteSubtitleEntry(parseInt(btn.dataset.id, 10)));
+    });
+
+    const langSelect = panelEl.querySelector("#sidecarLangSelect");
+    const langOther = panelEl.querySelector("#sidecarLangOther");
+    langSelect.addEventListener("change", () => {
+      langOther.style.display = langSelect.value === "other" ? "inline-block" : "none";
+    });
+    panelEl.querySelector("#sidecarAddBtn").addEventListener("click", handleAddSubtitle);
+  }
+
+  async function adjustOffset(id, delta) {
+    const sub = subtitles.find((s) => s.id === id);
+    if (!sub) return;
+    await setOffset(id, sub.offsetMs + delta);
+  }
+
+  async function setOffset(id, newOffsetMs) {
+    try {
+      const resp = await fetch(`/api/subtitles/${id}/offset`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offsetMs: newOffsetMs }),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).error || "Failed to update offset");
+      const updated = await resp.json();
+      const idx = subtitles.findIndex((s) => s.id === id);
+      if (idx >= 0) subtitles[idx] = updated;
+      await rebuildTracksAndOptions();
+      renderPanel();
+    } catch (err) {
+      alert("Failed to adjust subtitle offset: " + err.message);
+    }
+  }
+
+  async function deleteSubtitleEntry(id) {
+    if (!confirm("Delete this subtitle?")) return;
+    try {
+      const resp = await fetch(`/api/subtitles/${id}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error((await resp.json()).error || "Delete failed");
+      subtitles = subtitles.filter((s) => s.id !== id);
+      const url = blobUrls.get(id);
+      if (url) { URL.revokeObjectURL(url); blobUrls.delete(id); }
+      await rebuildTracksAndOptions();
+      renderPanel();
+    } catch (err) {
+      alert("Failed to delete subtitle: " + err.message);
+    }
+  }
+
+  async function handleAddSubtitle() {
+    const fileInput = panelEl.querySelector("#sidecarSrtInput");
+    const langSelect = panelEl.querySelector("#sidecarLangSelect");
+    const langOther = panelEl.querySelector("#sidecarLangOther");
+    const statusEl = panelEl.querySelector("#sidecarAddStatus");
+    const file = fileInput.files[0];
+    if (!file) { statusEl.textContent = "Choose a .srt file first."; return; }
+
+    const language = langSelect.value === "other" ? (langOther.value.trim() || "und") : langSelect.value;
+
+    statusEl.textContent = "Uploading...";
+    try {
+      const fd = new FormData();
+      fd.append("srt", file);
+      const uploadResp = await fetch("/api/uploadSrt", { method: "POST", body: fd });
+      if (!uploadResp.ok) throw new Error((await uploadResp.json()).error || "Upload failed");
+      const staged = await uploadResp.json();
+
+      const attachResp = await fetch("/api/subtitles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mediaType, mediaId,
+          language,
+          srtFile: staged.srtFile,
+          originalName: staged.originalName,
+        }),
+      });
+      if (!attachResp.ok) throw new Error((await attachResp.json()).error || "Failed to attach subtitle");
+      const newSub = await attachResp.json();
+      subtitles.push(newSub);
+      await rebuildTracksAndOptions();
+      renderPanel();
+    } catch (err) {
+      statusEl.textContent = "Error: " + err.message;
+    }
+  }
+
+  subtitles = await fetchList();
+  await rebuildTracksAndOptions();
+  renderPanel();
+}
+
 async function domInserter() {
   const dataObject = await fetchApi();
   if (!dataObject || !dataObject.length) {
@@ -55,12 +288,15 @@ async function domInserter() {
     console.log("Could not load track info:", e);
   }
 
-  // Build <track> HTML strings for subtitles
+  // Build <track> HTML strings for embedded subtitles. data-key uniquely
+  // identifies each track regardless of source (embedded stream vs sidecar
+  // .vtt file) so the subtitle selector can't accidentally confuse an
+  // embedded stream's ffprobe index with a sidecar subtitle's DB id.
   let trackHtml = "";
   for (const s of trackData.subtitles || []) {
     const lang = s.language !== "und" ? ` srclang="${escapeAttr(s.language)}"` : "";
     const label = escapeAttr(s.title || `Sub ${s.index}`);
-    trackHtml += `<track kind="subtitles" src="/api/subtitle?path=data/serie/${encodeURIComponent(serie)}/${encodeURIComponent(id)}.mp4&index=${s.index}"${lang} label="${label}" data-index="${s.index}">`;
+    trackHtml += `<track kind="subtitles" src="/api/subtitle?path=data/serie/${encodeURIComponent(serie)}/${encodeURIComponent(id)}.mp4&index=${s.index}"${lang} label="${label}" data-key="embedded:${s.index}">`;
   }
 
   // Build audio select options
@@ -80,15 +316,14 @@ async function domInserter() {
     audioOptions = `<option value="">Audio: None detected</option>`;
   }
 
-  // Build subtitle select options
-  let subOptions = '<option value="-1">Subs: Off</option>';
+  // Build subtitle select options (embedded tracks only here — sidecar
+  // subtitles are added dynamically once fetched, see setupSidecarSubtitles)
+  let subOptions = '<option value="off">Subs: Off</option>';
   if (trackData.subtitles && trackData.subtitles.length > 0) {
     for (const s of trackData.subtitles) {
       const lang = s.language !== "und" ? ` [${s.language}]` : "";
-      subOptions += `<option value="${s.index}">${escapeHtml(s.title || "Sub " + s.index)}${lang}</option>`;
+      subOptions += `<option value="embedded:${s.index}">${escapeHtml(s.title || "Sub " + s.index)}${lang}</option>`;
     }
-  } else {
-    subOptions = `<option value="-1">Subs: None detected</option>`;
   }
 
   // Video player with custom controls — <track> elements baked into initial HTML
@@ -170,12 +405,24 @@ async function domInserter() {
         </div>
       </div>
     </div>
+    <div id="subtitlePanel" style="max-width:1100px;margin:16px auto;padding:0 24px;"></div>
   `;
 
   // Initialize edit functionality
   initEpisodeEdit(ep, id);
 
   initVideoControls(id, serie);
+
+  // Sidecar subtitles (uploaded .srt files converted to .vtt with an
+  // adjustable sync offset) — separate from the embedded tracks handled by
+  // initVideoControls, since they're fetched from a different API and
+  // rendered as dynamically-added <track> elements.
+  const videoEl = document.getElementById("video");
+  const subtitleSelectEl = document.getElementById("subtitleTrackSelect");
+  const subtitlePanelEl = document.getElementById("subtitlePanel");
+  if (videoEl && subtitleSelectEl && subtitlePanelEl) {
+    setupSidecarSubtitles("episode", id, videoEl, subtitleSelectEl, subtitlePanelEl);
+  }
 }
 
 function initEpisodeEdit(ep, id) {
@@ -378,15 +625,14 @@ function initVideoControls(episodeId, serieTitle) {
   video.muted = false;
   video.volume = 1.0;
 
-  // Subtitle track selection — enable the chosen track on the video element
+  // Subtitle track selection — enable the chosen track on the video element.
+  // Works for both embedded tracks (data-key="embedded:<ffprobe index>")
+  // and sidecar subtitles (data-key="sidecar:<subtitle db id>").
   function applySubtitleTrack() {
-    const idx = parseInt(subtitleSelect.value, 10);
+    const selectedKey = subtitleSelect.value;
     const tracks = video.querySelectorAll("track");
     for (const trackEl of tracks) {
-      let isSelected = false;
-      if (idx !== -1 && trackEl.dataset.index === String(idx)) {
-        isSelected = true;
-      }
+      const isSelected = selectedKey !== "off" && trackEl.dataset.key === selectedKey;
       if (trackEl.track) {
         trackEl.track.mode = isSelected ? "showing" : "disabled";
       }

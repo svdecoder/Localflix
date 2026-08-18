@@ -35,6 +35,7 @@ services:
       - ./data/serie:/app/data/serie
       - ./data/thumbnail:/app/data/thumbnail
       - ./data/uploads:/app/data/uploads
+      - ./data/subtitles:/app/data/subtitles
       - ./config:/app/config
     depends_on:
       db:

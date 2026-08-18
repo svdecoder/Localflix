@@ -16,16 +16,17 @@ A lightweight self-hosted media library for movies and series. Store, view, and 
 - **Quality selection** — Choose output quality: Original, 1080p, 720p, or 480p
 - **Audio track selection** — Pick which audio streams to keep (multi-language support)
 - **Subtitle track selection** — Choose which embedded subtitle tracks to preserve (bitmap subs auto-filtered)
-- **External subtitles** — Upload `.srt` files to embed as selectable subtitle tracks
+- **External subtitles** — Upload `.srt` files as sidecar subtitles (converted to WebVTT), either at upload time or added later from the video page — with an adjustable sync offset that never requires re-encoding
 - **FFprobe analysis** — Video tracks are analyzed on upload for track selection
-- **Automatic thumbnails** — Generated from the 20-second mark of each video
+- **Automatic thumbnails** — Generated from a duration-aware timestamp (up to 20s in, or earlier for short clips), with a first-frame fallback
 - **Series autocomplete** — Type-to-search when adding episodes to existing series
 
 ### Video Player
 - **Seekable streaming** — HTTP range requests for smooth seeking and skipping
 - **Custom controls** — Play/pause, skip ±10s, mute, fullscreen, clickable progress bar with hover preview
-- **Audio track selector** — Switch between audio tracks in the player
-- **Subtitle selector** — Choose subtitle track or turn off
+- **Audio track selector** — Switch between audio tracks in the player (Chromium-based browsers only — see Known Limitations)
+- **Subtitle selector** — Choose between embedded subtitle tracks and sidecar (uploaded) subtitles, or turn off
+- **Subtitle management** — Upload, delete, and adjust sync offset (±100ms/±500ms, or reset) for sidecar subtitles directly from the video page, without any re-processing
 - **Download button** — Direct download link for the video file
 - **Keyboard shortcuts** — Space (play/pause), ←/→ (skip ±10s), F (fullscreen), M (mute)
 
@@ -68,7 +69,7 @@ docker compose up -d
 # Open http://localhost:3000
 ```
 
-The database schema is automatically initialized on first run. Media files persist to the `data/` directory on your host via bind mounts.
+The database schema is automatically initialized on first run (including the `subtitles` table used for sidecar subtitles — see "Database Migrations" below if you're upgrading an existing install instead of starting fresh). Media files persist to the `data/` directory on your host via bind mounts.
 
 ## Manual Setup
 
@@ -100,6 +101,21 @@ node server.js
 ```
 
 Open **http://localhost:3000** in your browser.
+
+## Database Migrations
+
+Localflix doesn't have a full migration runner — `data/mysql/schema.sql` is applied automatically on a fresh database, but existing installs need to apply new tables manually. Numbered, additive migration files live in `data/mysql/migrations/`; each one documents its own usage at the top and is safe to run against a database with existing data (they only add new tables/columns, never drop or modify existing ones).
+
+Currently available:
+- **`001_add_subtitles.sql`** — adds the `subtitles` table (sidecar subtitle files with adjustable sync offset). Needed if you're upgrading from a version of Localflix that predates this feature.
+
+```bash
+# Docker
+docker compose exec db mysql -uroot -p localflix < data/mysql/migrations/001_add_subtitles.sql
+
+# Manual / non-Docker MySQL
+mysql -u root -p localflix < data/mysql/migrations/001_add_subtitles.sql
+```
 
 ## Environment Variables
 
@@ -139,6 +155,7 @@ Localflix/
 │   ├── addMovie.js        # Movie upload & processing
 │   ├── addEpisode.js      # Episode upload & processing
 │   ├── addSerie.js        # Series creation
+│   ├── subtitles.js       # Sidecar subtitle management (SRT→VTT, offset, CRUD)
 │   ├── getDataMovie.js    # Movie data queries
 │   ├── getDataSerie.js    # Series data queries
 │   ├── getDataEpisodes.js # Episodes list queries
@@ -155,10 +172,12 @@ Localflix/
 │   ├── serie/             # Episode files (by series)
 │   ├── thumbnail/         # Auto-generated thumbnails
 │   ├── uploads/           # Temporary upload staging
+│   ├── subtitles/         # Sidecar subtitle files (.vtt, by movie/episode)
 │   ├── images/            # UI images (logo, icons)
 │   └── mysql/             # Database configuration
-│       ├── .env           # Database credentials
-│       ├── schema.sql     # Database schema
+│       ├── .env           # Database credentials (Manual Setup path)
+│       ├── schema.sql     # Database schema (applied automatically on fresh installs)
+│       ├── migrations/    # Additive migrations for existing installs
 │       └── docker-compose.yaml  # MySQL container
 └── .dockerignore
 ```
@@ -178,12 +197,17 @@ Localflix/
 | GET | `/stream/movie/:id` | Stream movie (range requests) |
 | GET | `/stream/serie/:serie/:id` | Stream episode (range requests) |
 | POST | `/api/probeUpload` | Upload & probe video for track selection |
-| POST | `/api/uploadSrt` | Upload external `.srt` subtitle file |
+| POST | `/api/uploadSrt` | Stage an external `.srt` subtitle file (used both at upload time and by the sidecar subtitle endpoints below) |
+| POST | `/api/subtitles` | Finalize a staged `.srt` into a persisted sidecar subtitle for a movie/episode |
+| GET | `/api/subtitles?mediaType=&mediaId=` | List sidecar subtitles for a movie/episode |
+| PATCH | `/api/subtitles/:id/offset` | Adjust a sidecar subtitle's sync offset (metadata only — no re-encode) |
+| DELETE | `/api/subtitles/:id` | Delete a sidecar subtitle (file + DB row) |
 | POST | `/add-movie` | Upload & process movie (multipart) |
 | POST | `/add-serie` | Create series with thumbnail (multipart) |
 | POST | `/add-episode` | Upload & process episode (multipart) |
-| DELETE | `/api/movie/:id` | Delete movie (file + DB) |
-| DELETE | `/api/serie/:title` | Delete series and all episodes (files + DB) |
+| DELETE | `/api/movie/:id` | Delete movie (file + DB + its sidecar subtitles) |
+| DELETE | `/api/episode/:id` | Delete a single episode (file + DB + its sidecar subtitles) |
+| DELETE | `/api/serie/:title` | Delete series and all episodes (files + DB + their sidecar subtitles) |
 
 ## Keyboard Shortcuts (Video Player)
 
@@ -207,6 +231,12 @@ Security measures implemented:
 - HTML escaping to prevent XSS
 - No stack traces leaked to the UI
 - No secrets exposed to the client
+
+## Known Limitations
+
+- **Audio track switching** in the player uses the `HTMLMediaElement.audioTracks` API, which only Chromium-based browsers (Chrome, Edge, Opera) implement. Firefox and Safari have no client-side way to switch between multiple audio tracks embedded in a video, so the audio selector is disabled on those browsers with an explanatory tooltip rather than silently doing nothing.
+- **No migration runner** — `data/mysql/migrations/` is a plain folder of numbered, manually-applied SQL files, not an automated system. See "Database Migrations" above.
+- **No automated test suite** exists for this project yet.
 
 ## License
 

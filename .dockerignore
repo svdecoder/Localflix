@@ -9,6 +9,7 @@ data/movies/*
 data/serie/*
 data/thumbnail/*
 data/uploads/*
+data/subtitles/*
 data/mysql/mysql-data/
 data/mysql/mysql-config/
 data/mysql/.env
