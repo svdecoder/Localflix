@@ -143,6 +143,12 @@ Localflix uses **two separate `.env` files**, depending on how you're running it
 | `DATABASE` | Database name | `localflix` |
 | `HOST` | MySQL host | `localhost` |
 
+### Optional (either setup)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MAX_CONCURRENT_ENCODES` | How many ffmpeg encode jobs are allowed to run at the same time. Additional jobs wait in a FIFO queue (visible in each job's log as `[QUEUE] Job queued...`) rather than running concurrently and competing for CPU. The default of `1` is deliberately conservative for typical self-hosted hardware — raise it only if you know the machine has CPU/memory headroom for multiple simultaneous encodes. | `1` |
+
 ## Project Structure
 
 ```

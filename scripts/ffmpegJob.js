@@ -12,6 +12,7 @@ import {
   getJob,
 } from "./jobManager.js";
 import { getQualityPresets, getEncodingSettings } from "./ffmpegConfig.js";
+import { enqueue, getQueueDepth, getActiveCount } from "./jobQueue.js";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 3000;
@@ -64,10 +65,21 @@ export default function runFfmpegJob(options) {
   // progress. Awaiting the full ffmpeg run (which can take many minutes) would
   // keep the HTTP request pending the whole time, which is what caused the
   // "Failed to start processing" error on the frontend.
-  runWithRetries(job, { inputPath, outputPath, thumbnailPath, probeData, options: jobOpts, databaseAdd }).catch((err) => {
-    // runWithRetries already reports failures onto the job/log; this catch is
-    // just a safety net so a truly unexpected error can't crash the process.
-    console.error(`[Job ${job.id}] Unhandled processing error:`, err);
+  //
+  // The actual work is enqueued rather than started immediately — see
+  // scripts/jobQueue.js — so only MAX_CONCURRENT_ENCODES (default 1) run at
+  // once; everything else waits its turn instead of competing for CPU.
+  const aheadOfThisJob = getQueueDepth() + getActiveCount();
+  if (aheadOfThisJob > 0) {
+    appendLog(job.id, `[QUEUE] Job queued — ${aheadOfThisJob} job(s) ahead of it. It will start automatically once a processing slot is free.`);
+  }
+  enqueue(() => {
+    appendLog(job.id, "[QUEUE] Starting now.");
+    return runWithRetries(job, { inputPath, outputPath, thumbnailPath, probeData, options: jobOpts, databaseAdd }).catch((err) => {
+      // runWithRetries already reports failures onto the job/log; this catch is
+      // just a safety net so a truly unexpected error can't crash the process.
+      console.error(`[Job ${job.id}] Unhandled processing error:`, err);
+    });
   });
 
   return job;
@@ -496,15 +508,27 @@ export async function restartJob(jobId) {
 
   appendLog(job.id, "[RESTART] Manual restart requested by user.");
   resetJob(job.id);
-  setJobStatus(job.id, "running");
 
-  runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, probeData, options })
-    .then(() => job.databaseAdd(job))
-    .then(() => setJobStatus(job.id, "completed"))
-    .catch((err) => {
-      appendLog(job.id, `[ERROR] ${err.message}`);
-      if (job.status !== "cancelled") setJobStatus(job.id, "failed", err.message);
-    });
+  // Same queueing as a fresh job (see runFfmpegJob) — a manual restart
+  // shouldn't be able to run alongside another job that's actively encoding,
+  // or the "one expensive job at a time" guarantee would only hold for
+  // first-time uploads and not retries/restarts.
+  const aheadOfThisJob = getQueueDepth() + getActiveCount();
+  if (aheadOfThisJob > 0) {
+    appendLog(job.id, `[QUEUE] Restart queued — ${aheadOfThisJob} job(s) ahead of it.`);
+  }
+
+  enqueue(() => {
+    appendLog(job.id, "[QUEUE] Starting now.");
+    setJobStatus(job.id, "running");
+    return runSingleAttempt(job, { inputPath, outputPath, thumbnailPath, probeData, options })
+      .then(() => job.databaseAdd(job))
+      .then(() => setJobStatus(job.id, "completed"))
+      .catch((err) => {
+        appendLog(job.id, `[ERROR] ${err.message}`);
+        if (job.status !== "cancelled") setJobStatus(job.id, "failed", err.message);
+      });
+  });
 
   return job;
 }
