@@ -1,13 +1,7 @@
-import mysql from "mysql2";
-import dbConfig from "./dbConfig.js";
+import { createConnection } from "./dbConnection.js";
 
 export default async function getCatalogue() {
-  const con = mysql.createConnection({
-    host: dbConfig.host,
-    user: "root",
-    password: dbConfig.password,
-    database: dbConfig.database,
-  });
+  const con = createConnection();
 
   return new Promise((resolve, reject) => {
     con.connect((err) => {

@@ -1,11 +1,10 @@
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
-import mysql from "mysql2";
+import { createConnection } from "./dbConnection.js";
 import path from "path";
 import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import dbConfig from "./dbConfig.js";
 import runFfmpegJob from "./ffmpegJob.js";
 import { addSubtitle } from "./subtitles.js";
 
@@ -133,12 +132,7 @@ async function databaseAdd(metadata, episodeUploadName, newEpisode) {
   });
   const lengthMinutes = Math.round(durationSeconds / 60);
 
-  const con = mysql.createConnection({
-    host: dbConfig.host,
-    user: "root",
-    password: dbConfig.password,
-    database: dbConfig.database,
-  });
+  const con = createConnection();
 
   return new Promise((resolve, reject) => {
     con.connect((err) => {

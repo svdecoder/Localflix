@@ -1,5 +1,4 @@
-import mysql from "mysql2";
-import dbConfig from "./dbConfig.js";
+import { createConnection } from "./dbConnection.js";
 
 function truncate(input, maxLength) {
   return String(input ?? "").slice(0, maxLength);
@@ -15,12 +14,7 @@ const COLUMNS = {
 };
 
 export default async function updateMovie(identifier, fields) {
-  const con = mysql.createConnection({
-    host: dbConfig.host,
-    user: "root",
-    password: dbConfig.password,
-    database: dbConfig.database,
-  });
+  const con = createConnection();
 
   return new Promise((resolve, reject) => {
     con.connect((err) => {

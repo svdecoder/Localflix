@@ -1,19 +1,13 @@
-import mysql from "mysql2";
+import { createConnection } from "./dbConnection.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import dbConfig from "./dbConfig.js";
 
 function query(sql, params = []) {
   return new Promise((resolve, reject) => {
-    const con = mysql.createConnection({
-      host: dbConfig.host,
-      user: "root",
-      password: dbConfig.password,
-      database: dbConfig.database,
-    });
+    const con = createConnection();
     con.connect((err) => {
       if (err) { con.end(); return reject(err); }
       con.query(sql, params, (err, rows) => {

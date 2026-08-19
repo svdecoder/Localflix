@@ -12,11 +12,10 @@
 
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
-import mysql from "mysql2";
+import { createConnection } from "./dbConnection.js";
 import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import dbConfig from "./dbConfig.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,12 +23,7 @@ const __dirname = path.dirname(__filename);
 const SUBTITLES_ROOT = path.join(__dirname, "..", "data", "subtitles");
 
 function getConnection() {
-  return mysql.createConnection({
-    host: dbConfig.host,
-    user: "root",
-    password: dbConfig.password,
-    database: dbConfig.database,
-  });
+  return createConnection();
 }
 
 function inputSanitize(input) {

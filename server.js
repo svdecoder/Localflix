@@ -22,6 +22,7 @@ import updateMovie from "./scripts/updateMovie.js";
 import updateEpisode from "./scripts/updateEpisode.js";
 import { getVideoTracks } from "./scripts/videoProbe.js";
 import dbConfig from "./scripts/dbConfig.js";
+import { createConnection } from "./scripts/dbConnection.js";
 import getStats from "./scripts/getStats.js";
 import wipeData from "./scripts/wipeData.js";
 import ffmpeg from "fluent-ffmpeg";
@@ -165,14 +166,7 @@ app.delete("/api/movie/:id", async (req, res) => {
     try { fs.unlinkSync(thumbnailPath); } catch (_) {}
     try { await deleteSubtitlesForMedia("movie", id); } catch (_) {}
 
-    const mysql = await import("mysql2");
-
-    const con = mysql.createConnection({
-      host: dbConfig.host,
-      user: "root",
-      password: dbConfig.password,
-      database: dbConfig.database,
-    });
+    const con = createConnection();
 
     await new Promise((resolve, reject) => {
       con.connect((err) => {
@@ -250,14 +244,7 @@ app.get("/api/searchSeries", async (req, res) => {
   const q = req.query.q;
   if (!q || q.length < 1) return res.json([]);
   try {
-    const mysql = await import("mysql2");
-
-    const con = mysql.createConnection({
-      host: dbConfig.host,
-      user: "root",
-      password: dbConfig.password,
-      database: dbConfig.database,
-    });
+    const con = createConnection();
 
     const results = await new Promise((resolve, reject) => {
       con.connect((err) => {
@@ -304,14 +291,7 @@ app.delete("/api/serie/:title", async (req, res) => {
     try { fs.rmSync(serieFolder, { recursive: true, force: true }); } catch (_) {}
     try { fs.unlinkSync(thumbnailPath); } catch (_) {}
 
-    const mysql = await import("mysql2");
-
-    const con = mysql.createConnection({
-      host: dbConfig.host,
-      user: "root",
-      password: dbConfig.password,
-      database: dbConfig.database,
-    });
+    const con = createConnection();
 
     // Grab the episode identifiers first — subtitle rows key on the episode's
     // identifier, not the series title, so we need this list to clean up
@@ -963,14 +943,7 @@ app.delete("/api/episode/:id", async (req, res) => {
     try { fs.unlinkSync(thumbnailPath); } catch (_) {}
     try { await deleteSubtitlesForMedia("episode", id); } catch (_) {}
 
-    const mysql = await import("mysql2");
-
-    const con = mysql.createConnection({
-      host: dbConfig.host,
-      user: "root",
-      password: dbConfig.password,
-      database: dbConfig.database,
-    });
+    const con = createConnection();
 
     await new Promise((resolve, reject) => {
       con.connect((err) => {

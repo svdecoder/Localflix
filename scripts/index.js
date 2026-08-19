@@ -1,9 +1,8 @@
-import mysql from "mysql2";
+import { createConnection } from "./dbConnection.js";
 import path from "path";
 import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import dbConfig from "./dbConfig.js";
 
 function inputSanitize(input) {
   return String(input).replace(/[^A-Za-z0-9._\- ]+/g, "");
@@ -13,12 +12,7 @@ export default async function vidIdentifiers(numberOfVid) {
   numberOfVid = parseInt(inputSanitize(numberOfVid), 10);
   if (isNaN(numberOfVid) || numberOfVid < 1) numberOfVid = 5;
 
-  const con = mysql.createConnection({
-    host: dbConfig.host,
-    user: "root",
-    password: dbConfig.password,
-    database: dbConfig.database,
-  });
+  const con = createConnection();
 
   const mysqlIdentifierResponse = await new Promise((resolve, reject) => {
     con.connect((err) => {
