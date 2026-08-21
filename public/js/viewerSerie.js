@@ -291,9 +291,18 @@ async function setupCompressionPanel(mediaType, mediaId, panelEl) {
   }
 
   function renderAnalysis(analysis) {
+    // Note: "recommended" is a rough bitrate-based estimate, not a reliable
+    // predictor — real-world use has shown 15-38% savings on files this
+    // flagged as "not recommended" (e.g. footage originally encoded with a
+    // fast/low-effort preset or a different tool entirely, which a slower,
+    // more efficient re-encode can still shrink meaningfully even at a
+    // higher target quality). The actual compression job is what determines
+    // the real result, and it never commits a file that isn't genuinely
+    // smaller — so there's no downside to trying either way, hence no
+    // blocking confirmation here anymore.
     const recommendedText = analysis.recommended
-      ? `<span style="color:var(--success);">Recommended</span> — estimated savings ~${analysis.estimatedSavingsPercent}%`
-      : `<span style="color:var(--text-muted);">Not recommended</span> — already efficiently compressed`;
+      ? `<span style="color:var(--success);">Likely worth it</span> — estimated savings ~${analysis.estimatedSavingsPercent}%`
+      : `<span style="color:var(--text-muted);">Uncertain</span> — bitrate looks efficient already, but this is just an estimate`;
 
     panelEl.innerHTML = `
       <div class="subtitle-panel">
@@ -305,7 +314,7 @@ async function setupCompressionPanel(mediaType, mediaId, panelEl) {
           <p style="color:var(--text-muted);margin-top:4px;">${escapeHtml(analysis.reason)}</p>
         </div>
         <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <button type="button" class="sub-btn" id="compressBtn">Compress ${analysis.recommended ? "Now" : "Anyway"}</button>
+          <button type="button" class="sub-btn" id="compressBtn">Compress</button>
           <span id="compressStatusText" style="font-size:0.8rem;color:var(--text-muted);"></span>
         </div>
         <div id="compressJobContainer" style="margin-top:12px;"></div>
@@ -313,17 +322,12 @@ async function setupCompressionPanel(mediaType, mediaId, panelEl) {
     `;
 
     panelEl.querySelector("#compressBtn").addEventListener("click", () => {
-      // force=true bypasses the "savings below minimum threshold" skip —
-      // but never the "result is actually bigger" check, which the backend
-      // enforces unconditionally regardless of force. Still worth an
-      // explicit confirmation here, since the user is choosing to spend
-      // time/CPU on a re-encode that isn't expected to help much.
-      if (!analysis.recommended) {
-        const proceed = confirm(
-          "This file already looks efficiently compressed, so compressing it is unlikely to save much space — and if the result isn't smaller, the original will be kept automatically either way. Continue anyway?"
-        );
-        if (!proceed) return;
-      }
+      // force=true bypasses the "savings below minimum threshold" skip on
+      // the backend — but never the "result is actually bigger" check,
+      // which is enforced unconditionally there regardless of force. Since
+      // that guarantee makes this always safe to try, there's no blocking
+      // confirmation dialog here — the estimate above is informational, not
+      // a gate the user has to argue their way past.
       startCompression(!analysis.recommended);
     });
   }
@@ -476,6 +480,133 @@ async function setupCompressionPanel(mediaType, mediaId, panelEl) {
   await loadAnalysis();
 }
 
+// ===== Automatic Next Episode (Task 4) =====
+//
+// Configurable thresholds — named constants rather than magic numbers, so
+// they're easy to tune later without hunting through the logic below.
+const NEXT_EPISODE_THRESHOLD_SECONDS = 20; // show the countdown once this many seconds remain
+const NEXT_EPISODE_COUNTDOWN_SECONDS = 8;  // how long the countdown itself runs before auto-navigating
+
+async function setupNextEpisode(currentEpisodeId) {
+  const video = document.getElementById("video");
+  const overlay = document.getElementById("nextEpisodeOverlay");
+  if (!video || !overlay) return;
+
+  let nextEpisode = null;
+  try {
+    const resp = await fetch(`/api/nextEpisode?id=${encodeURIComponent(currentEpisodeId)}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      nextEpisode = data.next;
+    }
+  } catch (_) {
+    // If this fails, we simply don't offer a next episode — never block
+    // normal playback over it.
+  }
+
+  // No next episode — this is genuinely the last episode of the series (or
+  // the lookup failed). Per the spec: don't show or start anything.
+  if (!nextEpisode) return;
+
+  let countdownInterval = null;
+  let remainingCountdown = NEXT_EPISODE_COUNTDOWN_SECONDS;
+  let shown = false;   // overlay currently visible
+  let dismissed = false; // user explicitly cancelled — don't re-show until they seek back past the threshold and forward again
+
+  function goToNextEpisode() {
+    window.location.href = `/viewerS?id=${encodeURIComponent(nextEpisode.identifier)}`;
+  }
+
+  function renderOverlay() {
+    overlay.innerHTML = `
+      <div class="next-episode-card">
+        <div class="next-episode-info">
+          <span class="next-episode-label">Next Episode</span>
+          <span class="next-episode-title">${escapeHtml(nextEpisode.title || `Episode ${nextEpisode.episode}`)}</span>
+        </div>
+        <div class="next-episode-actions">
+          <button type="button" id="nextEpisodeCancelBtn" class="next-episode-btn cancel">Cancel</button>
+          <button type="button" id="nextEpisodePlayBtn" class="next-episode-btn play">Play Now (<span id="nextEpisodeCountdown">${remainingCountdown}</span>s)</button>
+        </div>
+      </div>
+    `;
+    overlay.style.display = "block";
+
+    overlay.querySelector("#nextEpisodePlayBtn").addEventListener("click", () => {
+      stopCountdown();
+      goToNextEpisode();
+    });
+    overlay.querySelector("#nextEpisodeCancelBtn").addEventListener("click", () => {
+      dismissed = true;
+      hideOverlay();
+    });
+  }
+
+  function hideOverlay() {
+    stopCountdown();
+    shown = false;
+    overlay.style.display = "none";
+    overlay.innerHTML = "";
+  }
+
+  function stopCountdown() {
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
+  }
+
+  function startCountdown() {
+    remainingCountdown = NEXT_EPISODE_COUNTDOWN_SECONDS;
+    renderOverlay();
+    countdownInterval = setInterval(() => {
+      remainingCountdown--;
+      const span = document.getElementById("nextEpisodeCountdown");
+      if (span) span.textContent = remainingCountdown;
+      if (remainingCountdown <= 0) {
+        stopCountdown();
+        goToNextEpisode();
+      }
+    }, 1000);
+  }
+
+  video.addEventListener("timeupdate", () => {
+    if (!isFinite(video.duration) || video.duration <= 0) return;
+    const remaining = video.duration - video.currentTime;
+
+    if (remaining <= NEXT_EPISODE_THRESHOLD_SECONDS) {
+      if (!shown && !dismissed) {
+        shown = true;
+        startCountdown();
+      }
+    } else if (shown || dismissed) {
+      // User seeked backward out of the near-end window — reset so the
+      // countdown can trigger again naturally if they reach the end again,
+      // rather than staying permanently dismissed for the rest of playback.
+      hideOverlay();
+      dismissed = false;
+    }
+  });
+
+  // Pausing is treated as an implicit "not now" — don't keep counting down
+  // toward an auto-navigation the user didn't ask for while they've
+  // deliberately paused.
+  video.addEventListener("pause", () => {
+    if (shown) {
+      dismissed = true;
+      hideOverlay();
+    }
+  });
+
+  // If the video actually ends before the countdown would have triggered
+  // (e.g. threshold seconds rounds oddly for a very short episode), go
+  // straight to the next episode rather than leaving the player sitting on
+  // a black "ended" frame with no next-episode offer.
+  video.addEventListener("ended", () => {
+    if (!dismissed) goToNextEpisode();
+  });
+}
+
 async function domInserter() {
   const dataObject = await fetchApi();
   if (!dataObject || !dataObject.length) {
@@ -544,6 +675,7 @@ async function domInserter() {
         ${trackHtml}
         Your browser does not support the video tag.
       </video>
+      <div id="nextEpisodeOverlay" class="next-episode-overlay" style="display:none;"></div>
       <div class="video-controls-overlay" id="customControls">
         <div class="progress-container" id="progressContainer">
           <div class="progress-bar" id="progressBar"></div>
@@ -639,6 +771,8 @@ async function domInserter() {
   if (compressionPanelEl) {
     setupCompressionPanel("episode", id, compressionPanelEl);
   }
+
+  setupNextEpisode(id);
 }
 
 function initEpisodeEdit(ep, id) {

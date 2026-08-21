@@ -1511,8 +1511,98 @@ select.track-select option {
   color: #e6edf3;
 }
 
+/* ===== Automatic Next Episode overlay ===== */
+.next-episode-overlay {
+  position: absolute;
+  right: 20px;
+  bottom: 90px;
+  z-index: 20;
+  max-width: 340px;
+  animation: next-episode-fade-in 0.25s ease;
+}
+
+@keyframes next-episode-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.next-episode-card {
+  background: rgba(20, 22, 30, 0.95);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(6px);
+}
+
+.next-episode-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.next-episode-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.next-episode-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: white;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.next-episode-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.next-episode-btn {
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.next-episode-btn.cancel {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.next-episode-btn.cancel:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.next-episode-btn.play {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.next-episode-btn.play:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
+  .next-episode-overlay {
+    left: 12px;
+    right: 12px;
+    bottom: 70px;
+    max-width: none;
+  }
+
   .topHeader nav ul {
     height: 48px;
   }

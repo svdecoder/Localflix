@@ -15,6 +15,7 @@ import getCatalogue from "./scripts/getCatalogue.js";
 import getDataSeries from "./scripts/getDataSerie.js";
 import getDataEpisodes from "./scripts/getDataEpisodes.js";
 import getDataEpisode from "./scripts/getDataEpisode.js";
+import getNextEpisode from "./scripts/getNextEpisode.js";
 import search from "./scripts/search.js";
 import addSerie from "./scripts/addSerie.js";
 import addEpisodeHandler from "./scripts/addEpisode.js";
@@ -197,6 +198,21 @@ app.get("/api/dataEpisode", async (req, res) => {
   } catch (err) {
     console.error("Error fetching episode data:", err);
     res.status(500).json({ error: "Failed to fetch episode data" });
+  }
+});
+
+// Resolve the next episode after the given one — same season if there's
+// another episode, otherwise episode 1 of the next season, otherwise null
+// (end of series). Used by the player's automatic "Next Episode" countdown.
+app.get("/api/nextEpisode", async (req, res) => {
+  const identifier = req.query.id;
+  if (!identifier) return res.status(400).json({ error: "Missing id parameter" });
+  try {
+    const next = await getNextEpisode(identifier);
+    res.json({ next });
+  } catch (err) {
+    console.error("Error resolving next episode:", err);
+    res.status(500).json({ error: "Failed to resolve next episode" });
   }
 });
 
