@@ -7,6 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import runFfmpegJob from "./ffmpegJob.js";
 import { addSubtitle } from "./subtitles.js";
+import { getCompressionSettings } from "./ffmpegConfig.js";
+import { runCompressionJob } from "./compressJob.js";
 
 function inputSanitize(input) {
   return String(input).replace(/[^A-Za-z0-9._\- ]+/g, "");
@@ -91,10 +93,28 @@ export default async function addMovieHandler(req) {
     databaseAdd: async () => {
       await databaseAdd(metadata, identifiers, newMovie);
       await attachStagedSubtitles(identifiers, srtEntries);
+      maybeAutoCompress("movie", identifiers, newMovie);
     },
   });
 
   return job;
+}
+
+// If enabled in config, automatically queue a compression job right after
+// this upload's own encode finishes. Fire-and-forget: it just joins the
+// same shared job queue as everything else (force:false, so the backend's
+// "never commit a worse result" and "skip below minimum savings" guarantees
+// apply exactly as they do for a manually-triggered compression), and runs
+// once a processing slot frees up — it does not block or delay marking this
+// upload job "completed".
+function maybeAutoCompress(mediaType, mediaId, filePath) {
+  try {
+    const settings = getCompressionSettings();
+    if (!settings.autoCompressAfterUpload) return;
+    runCompressionJob({ mediaType, mediaId, filePath, force: false });
+  } catch (err) {
+    console.error(`Failed to queue auto-compression for ${mediaType} ${mediaId}:`, err.message);
+  }
 }
 
 // Convert each staged .srt into a sidecar subtitle now that the movie row

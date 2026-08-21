@@ -194,6 +194,32 @@
   color: white;
 }
 
+/* Non-destructive action — same shape/sizing as .btn-wipe but accent-colored
+   instead of danger-red, and deliberately a separate class so it isn't
+   swept up by the .btn-wipe query selector that wires up the wipe buttons. */
+.btn-compress-scan {
+  padding: 10px 16px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), box-shadow var(--transition);
+}
+
+.btn-compress-scan:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.btn-compress-scan:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .wipe-status {
   margin-top: 16px;
   padding: 12px;
@@ -222,6 +248,49 @@
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid var(--danger);
   color: var(--danger);
+}
+
+/* ===== Compress Library scan table ===== */
+.compress-scan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.compress-scan-table th,
+.compress-scan-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.compress-scan-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.compress-scan-table td {
+  color: var(--text-primary);
+}
+
+.compress-log-row td {
+  padding: 0 10px 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.compress-log-tail {
+  margin: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 8px 12px;
+  background: #0d1117;
+  border-radius: var(--radius-sm);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #8b949e;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ===== FFmpeg Config ===== */

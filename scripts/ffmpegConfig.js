@@ -22,6 +22,27 @@ const DEFAULT_CONFIG = {
     audioCodec: "aac",
     audioChannels: "2",
     subtitleCodec: "mov_text"
+  },
+  compression: {
+    // CRF 20 with preset "medium" targets visually-transparent-or-better
+    // quality — lower CRF than the default upload encoding (23) and a
+    // slower/more efficient x264 preset, since compression jobs are
+    // explicitly opted into by the user and expected to trade encode time
+    // for a better size/quality ratio, unlike the upload pipeline which
+    // favors speed. Resolution and framerate are never touched by
+    // compression — only the CRF/preset differ from the source.
+    crf: "20",
+    preset: "medium",
+    // A compression job is skipped (original kept) unless the new file is
+    // at least this fraction smaller. Guards against re-encoding something
+    // that's already efficiently compressed for a result that isn't
+    // actually worth the CPU time / re-encode risk.
+    minSavingsPercent: 10,
+    // Automatically queue a compression job right after every new
+    // movie/episode finishes its normal upload encode. Uses force:false, so
+    // the same minSavingsPercent/never-bigger safety net applies — this
+    // never replaces a file with a worse result, it just tries.
+    autoCompressAfterUpload: true
   }
 };
 
@@ -45,4 +66,8 @@ export function getQualityPresets() {
 
 export function getEncodingSettings() {
   return getFfmpegConfig().encoding || DEFAULT_CONFIG.encoding;
+}
+
+export function getCompressionSettings() {
+  return getFfmpegConfig().compression || DEFAULT_CONFIG.compression;
 }

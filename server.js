@@ -29,6 +29,7 @@ import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
 import { getJobPublic, subscribe, getRunningJobs } from "./scripts/jobManager.js";
 import { restartJob, cancelJob } from "./scripts/ffmpegJob.js";
+import { analyzeCompression, runCompressionJob, scanLibraryForCompression } from "./scripts/compressJob.js";
 import { getFfmpegConfig, FFMPEG_CONFIG_PATH, DEFAULT_FFMPEG_CONFIG } from "./scripts/ffmpegConfig.js";
 import { addSubtitle, getSubtitles, getSubtitleById, deleteSubtitle, updateSubtitleOffset, deleteSubtitlesForMedia } from "./scripts/subtitles.js";
 
@@ -493,7 +494,13 @@ app.get("/api/job/:id/stream", (req, res) => {
       res.write(`data: ${JSON.stringify({ type: "log", line })}\n\n`);
     },
     onStatus: (status) => {
-      res.write(`data: ${JSON.stringify({ type: "status", status })}\n\n`);
+      // Include the job's current result alongside the status push — needed
+      // by any consumer (e.g. the compression panel) that wants to show a
+      // summary the moment a job finishes, without a second round-trip.
+      // The initial "snapshot" message already includes this via the full
+      // job object; this keeps live status pushes consistent with that.
+      const current = getJobPublic(job.id);
+      res.write(`data: ${JSON.stringify({ type: "status", status, result: current?.result })}\n\n`);
     },
     onProgress: (progress) => {
       res.write(`data: ${JSON.stringify({ type: "progress", progress })}\n\n`);
@@ -961,6 +968,86 @@ app.delete("/api/episode/:id", async (req, res) => {
   } catch (err) {
     console.error("Error deleting episode:", err);
     res.status(500).json({ error: "Failed to delete episode" });
+  }
+});
+
+// ===== Video compression (Task 3) =====
+// Resolves the same movie/episode paths as the delete routes above, reusing
+// the same lookup pattern so file locations never drift out of sync between
+// features that need to find "the video file for this ID".
+
+async function resolveMediaFilePath(mediaType, mediaId) {
+  if (mediaType === "movie") {
+    const rows = await getDataMovie(mediaId);
+    if (!rows || !rows[0]) return null;
+    return path.join(__dirname, "data", "movies", `${mediaId}.mp4`);
+  }
+  if (mediaType === "episode") {
+    const rows = await getDataEpisode(mediaId);
+    if (!rows || !rows[0]) return null;
+    const serie = String(rows[0].serie_id).replace(/[^A-Za-z0-9._\- ]+/g, "");
+    return path.join(__dirname, "data", "serie", serie, `${mediaId}.mp4`);
+  }
+  return null;
+}
+
+// Cheap, probe-only check — no encoding — so the UI can show current size/
+// codec/resolution and an estimate before the user commits to a real job.
+app.get("/api/compress/:mediaType/:mediaId/analyze", async (req, res) => {
+  const mediaType = req.params.mediaType;
+  const mediaId = String(req.params.mediaId).replace(/[^A-Za-z0-9._\- ]+/g, "");
+  if (!["movie", "episode"].includes(mediaType)) {
+    return res.status(400).json({ error: "mediaType must be 'movie' or 'episode'" });
+  }
+
+  try {
+    const filePath = await resolveMediaFilePath(mediaType, mediaId);
+    if (!filePath) return res.status(404).json({ error: `No ${mediaType} found with that ID` });
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Video file not found on disk" });
+
+    const analysis = await analyzeCompression(filePath);
+    res.json(analysis);
+  } catch (err) {
+    console.error("Error analyzing compression:", err);
+    res.status(500).json({ error: "Failed to analyze file" });
+  }
+});
+
+// Trigger an actual compression job. Returns immediately with a jobId —
+// same fire-and-forget + SSE progress pattern as /add-movie and /add-episode.
+app.post("/api/compress/:mediaType/:mediaId", async (req, res) => {
+  const mediaType = req.params.mediaType;
+  const mediaId = String(req.params.mediaId).replace(/[^A-Za-z0-9._\- ]+/g, "");
+  const force = req.body?.force === true;
+  if (!["movie", "episode"].includes(mediaType)) {
+    return res.status(400).json({ error: "mediaType must be 'movie' or 'episode'" });
+  }
+
+  try {
+    const filePath = await resolveMediaFilePath(mediaType, mediaId);
+    if (!filePath) return res.status(404).json({ error: `No ${mediaType} found with that ID` });
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Video file not found on disk" });
+
+    const job = runCompressionJob({ mediaType, mediaId, filePath, force });
+    res.json({ jobId: job.id, status: job.status });
+  } catch (err) {
+    console.error("Error starting compression:", err);
+    res.status(500).json({ error: "Failed to start compression" });
+  }
+});
+
+// Queue a compression job (force:false — same safety net as a single
+// manual job) for every movie/episode in the library that still has a file
+// on disk. Jobs run one at a time through the shared queue, same as
+// everything else — this just lines them all up and returns immediately
+// with the full list so the Config page can poll each one's progress.
+app.post("/api/compress/scanLibrary", async (req, res) => {
+  try {
+    const queued = await scanLibraryForCompression();
+    res.json({ queuedCount: queued.length, jobs: queued });
+  } catch (err) {
+    console.error("Error scanning library for compression:", err);
+    res.status(500).json({ error: "Failed to scan library" });
   }
 });
 

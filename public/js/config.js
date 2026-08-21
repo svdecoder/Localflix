@@ -233,6 +233,155 @@ async function resetFfmpegConfig() {
   }
 }
 
+// ===== Compress Library =====
+// Kicks off a scan (queues a compression job for every movie/episode that
+// still has a file on disk), then polls each job's status individually via
+// GET /api/job/:id (a plain fetch, not SSE) so a library of hundreds of
+// items doesn't try to open hundreds of concurrent EventSource connections
+// — browsers cap concurrent connections per origin, and SSE would hit that
+// limit almost immediately at any real library size.
+let compressPollInterval = null;
+
+function formatMB(bytes) {
+  return (bytes / 1024 / 1024).toFixed(1);
+}
+
+function renderCompressScanTable(jobs) {
+  const container = document.getElementById("compressScanTable");
+  if (jobs.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="compress-scan-table">
+      <thead>
+        <tr><th>Title</th><th>Type</th><th>Status</th><th>Result</th></tr>
+      </thead>
+      <tbody>
+        ${jobs.map((j) => `
+          <tr data-job-id="${j.jobId}">
+            <td>${escapeHtmlLocal(j.title)}</td>
+            <td>${j.mediaType}</td>
+            <td class="compress-status">${j.status || "queued"}</td>
+            <td class="compress-result">${formatCompressResult(j.result)}</td>
+          </tr>
+          <tr class="compress-log-row" data-job-id-log="${j.jobId}" style="display:none;">
+            <td colspan="4"><pre class="compress-log-tail"></pre></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function escapeHtmlLocal(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
+function formatCompressResult(result) {
+  if (!result) return "";
+  if (result.skipped) {
+    return result.reason === "not_smaller" ? "Kept original (not smaller)" : "Kept original (below min. savings)";
+  }
+  return `${formatMB(result.originalSizeBytes)} MB → ${formatMB(result.newSizeBytes)} MB (${result.savingsPercent}% smaller)`;
+}
+
+// How many trailing log lines to show for a running job — just enough to
+// see live ffmpeg progress (frame/fps/bitrate lines) without the table
+// growing unreasonably tall while several dozen items are queued behind it.
+const LOG_TAIL_LINES = 8;
+
+async function pollCompressScanJobs(jobs) {
+  const statusEl = document.getElementById("compressScanStatus");
+
+  async function pollOnce() {
+    let stillRunning = 0;
+    for (const j of jobs) {
+      try {
+        // GET /api/job/:id already returns the full log array (used
+        // elsewhere for the SSE snapshot too) — no separate endpoint or SSE
+        // connection needed to show live ffmpeg output here, which matters
+        // since this loop covers every queued job, not just one.
+        const resp = await fetch(`/api/job/${j.jobId}`);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        j.status = data.status;
+        j.result = data.result;
+        if (data.status === "queued" || data.status === "running") stillRunning++;
+
+        const row = document.querySelector(`tr[data-job-id="${j.jobId}"]`);
+        if (row) {
+          row.querySelector(".compress-status").textContent = data.status;
+          row.querySelector(".compress-result").textContent = formatCompressResult(data.result);
+        }
+
+        const logRow = document.querySelector(`tr[data-job-id-log="${j.jobId}"]`);
+        if (logRow) {
+          if (data.status === "running" && data.log && data.log.length > 0) {
+            logRow.style.display = "";
+            const tailLines = data.log.slice(-LOG_TAIL_LINES);
+            const pre = logRow.querySelector(".compress-log-tail");
+            pre.textContent = tailLines.join("\n");
+            pre.scrollTop = pre.scrollHeight;
+          } else {
+            logRow.style.display = "none";
+          }
+        }
+      } catch (_) {
+        // A single job's poll failing shouldn't stop the others from updating.
+      }
+    }
+
+    statusEl.textContent = stillRunning > 0
+      ? `${stillRunning} of ${jobs.length} job(s) still queued or running...`
+      : `All ${jobs.length} job(s) finished.`;
+
+    if (stillRunning === 0 && compressPollInterval) {
+      clearInterval(compressPollInterval);
+      compressPollInterval = null;
+    }
+  }
+
+  await pollOnce();
+  if (compressPollInterval) clearInterval(compressPollInterval);
+  // Tighter interval than a typical status poll, since the whole point of
+  // this loop now is to also show near-live ffmpeg progress for whichever
+  // job is currently running.
+  compressPollInterval = setInterval(pollOnce, 2000);
+}
+
+async function scanLibrary() {
+  const btn = document.getElementById("scanLibraryBtn");
+  const statusEl = document.getElementById("compressScanStatus");
+  btn.disabled = true;
+  statusEl.textContent = "Scanning library and queuing jobs...";
+  document.getElementById("compressScanTable").innerHTML = "";
+
+  try {
+    const resp = await fetch("/api/compress/scanLibrary", { method: "POST" });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || "Scan failed");
+    }
+    const data = await resp.json();
+    if (data.queuedCount === 0) {
+      statusEl.textContent = "Nothing to compress — no movie/episode files found on disk.";
+      btn.disabled = false;
+      return;
+    }
+    statusEl.textContent = `Queued ${data.queuedCount} job(s). They'll run one at a time.`;
+    renderCompressScanTable(data.jobs);
+    await pollCompressScanJobs(data.jobs);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ===== Init =====
 document.addEventListener("DOMContentLoaded", () => {
   loadStats();
@@ -244,4 +393,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("saveFfmpegBtn").addEventListener("click", saveFfmpegConfig);
   document.getElementById("resetFfmpegBtn").addEventListener("click", resetFfmpegConfig);
+  document.getElementById("scanLibraryBtn").addEventListener("click", scanLibrary);
 });

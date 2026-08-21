@@ -26,6 +26,7 @@ export function createJob(type, payload) {
     progress: 0,
     log: [],
     error: null,
+    result: null,
     createdAt: Date.now(),
     startedAt: null,
     finishedAt: null,
@@ -50,6 +51,7 @@ export function getJobPublic(id) {
     status: job.status,
     progress: job.progress,
     error: job.error,
+    result: job.result,
     log: job.log,
     createdAt: job.createdAt,
     startedAt: job.startedAt,
@@ -98,6 +100,16 @@ export function setJobProgress(jobId, progress) {
   job.lastProgressAt = Date.now();
   job.stalled = false;
   emitter.emit("progress", jobId, progress);
+}
+
+// Attach an arbitrary result payload to a job — used by compression jobs to
+// report before/after size, codec, and savings percentage once finished.
+// Upload jobs don't use this (result stays null), so this is purely
+// additive to the existing job shape.
+export function setJobResult(jobId, result) {
+  const job = jobs.get(jobId);
+  if (!job) return;
+  job.result = result;
 }
 
 export function setJobProcess(jobId, process) {

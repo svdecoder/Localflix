@@ -266,6 +266,216 @@ async function setupSidecarSubtitles(mediaType, mediaId, video, subtitleSelect, 
   renderPanel();
 }
 
+// ===== Video compression panel (Task 3) =====
+// Fetches a cheap probe-only analysis, shows current size/codec/estimate,
+// and lets the user trigger a real compression job with live progress —
+// reusing the exact same job-log/progress SSE mechanism the upload pages
+// use (/api/job/:id/stream), just wired up locally here rather than via a
+// shared import, consistent with how this file already duplicates small
+// helpers (escapeHtml, SUBTITLE_LANGUAGES, etc.) instead of importing them.
+async function setupCompressionPanel(mediaType, mediaId, panelEl) {
+  let currentJobId = null;
+  let eventSource = null;
+
+  function formatMB(bytes) {
+    return (bytes / 1024 / 1024).toFixed(1);
+  }
+
+  function renderLoading() {
+    panelEl.innerHTML = `
+      <div class="subtitle-panel">
+        <h4 style="margin-bottom:8px;">Compression</h4>
+        <p style="color:var(--text-muted);font-size:0.85rem;">Checking current file size and codec...</p>
+      </div>
+    `;
+  }
+
+  function renderAnalysis(analysis) {
+    const recommendedText = analysis.recommended
+      ? `<span style="color:var(--success);">Recommended</span> — estimated savings ~${analysis.estimatedSavingsPercent}%`
+      : `<span style="color:var(--text-muted);">Not recommended</span> — already efficiently compressed`;
+
+    panelEl.innerHTML = `
+      <div class="subtitle-panel">
+        <h4 style="margin-bottom:8px;">Compression</h4>
+        <div style="font-size:0.85rem;line-height:1.8;">
+          <div>Current size: <strong>${formatMB(analysis.sizeBytes)} MB</strong></div>
+          <div>Codec: <strong>${escapeHtml(analysis.codec)}</strong> — Resolution: <strong>${escapeHtml(analysis.resolution)}</strong></div>
+          <div>${recommendedText}</div>
+          <p style="color:var(--text-muted);margin-top:4px;">${escapeHtml(analysis.reason)}</p>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button type="button" class="sub-btn" id="compressBtn">Compress ${analysis.recommended ? "Now" : "Anyway"}</button>
+          <span id="compressStatusText" style="font-size:0.8rem;color:var(--text-muted);"></span>
+        </div>
+        <div id="compressJobContainer" style="margin-top:12px;"></div>
+      </div>
+    `;
+
+    panelEl.querySelector("#compressBtn").addEventListener("click", () => {
+      // force=true bypasses the "savings below minimum threshold" skip —
+      // but never the "result is actually bigger" check, which the backend
+      // enforces unconditionally regardless of force. Still worth an
+      // explicit confirmation here, since the user is choosing to spend
+      // time/CPU on a re-encode that isn't expected to help much.
+      if (!analysis.recommended) {
+        const proceed = confirm(
+          "This file already looks efficiently compressed, so compressing it is unlikely to save much space — and if the result isn't smaller, the original will be kept automatically either way. Continue anyway?"
+        );
+        if (!proceed) return;
+      }
+      startCompression(!analysis.recommended);
+    });
+  }
+
+  function renderError(message) {
+    panelEl.innerHTML = `
+      <div class="subtitle-panel">
+        <h4 style="margin-bottom:8px;">Compression</h4>
+        <p style="color:var(--danger);font-size:0.85rem;">${escapeHtml(message)}</p>
+      </div>
+    `;
+  }
+
+  async function loadAnalysis() {
+    renderLoading();
+    try {
+      const resp = await fetch(`/api/compress/${mediaType}/${encodeURIComponent(mediaId)}/analyze`);
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to analyze file");
+      }
+      const analysis = await resp.json();
+      renderAnalysis(analysis);
+    } catch (err) {
+      renderError(err.message);
+    }
+  }
+
+  function jobTerminalHtml() {
+    return `
+      <div class="job-terminal">
+        <div class="job-terminal-header">
+          <span class="job-terminal-title">Compression Job</span>
+          <span class="job-terminal-status queued" id="compressStatusBadge">queued</span>
+          <div class="job-terminal-actions">
+            <button type="button" class="job-terminal-btn cancel" id="compressCancelBtn">✕ Cancel</button>
+          </div>
+        </div>
+        <div class="job-terminal-progress">
+          <div class="job-terminal-progress-bar" id="compressProgressBar" style="width:0%"></div>
+        </div>
+        <div class="job-terminal-body" id="compressTerminalBody"></div>
+      </div>
+    `;
+  }
+
+  async function startCompression(force) {
+    const container = panelEl.querySelector("#compressJobContainer");
+    const btn = panelEl.querySelector("#compressBtn");
+    const statusText = panelEl.querySelector("#compressStatusText");
+    if (btn) btn.disabled = true;
+    if (statusText) statusText.textContent = "Starting...";
+
+    try {
+      const resp = await fetch(`/api/compress/${mediaType}/${encodeURIComponent(mediaId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to start compression");
+      }
+      const data = await resp.json();
+      currentJobId = data.jobId;
+      if (statusText) statusText.textContent = "";
+      container.innerHTML = jobTerminalHtml();
+      wireJobTerminal();
+    } catch (err) {
+      if (statusText) statusText.textContent = "Error: " + err.message;
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function wireJobTerminal() {
+    const statusBadge = panelEl.querySelector("#compressStatusBadge");
+    const progressBar = panelEl.querySelector("#compressProgressBar");
+    const terminalBody = panelEl.querySelector("#compressTerminalBody");
+    const cancelBtn = panelEl.querySelector("#compressCancelBtn");
+
+    function appendLine(line) {
+      const div = document.createElement("div");
+      div.className = "job-terminal-line";
+      div.textContent = line;
+      terminalBody.appendChild(div);
+      terminalBody.scrollTop = terminalBody.scrollHeight;
+    }
+
+    function describeSizeChange(savingsPercent) {
+      // savingsPercent is positive when smaller, negative when bigger.
+      // Previously this always said "smaller" regardless of sign, so a file
+      // that got bigger printed a confusing/wrong message like
+      // "-30% smaller" instead of clearly saying it got larger.
+      if (savingsPercent >= 0) return `${savingsPercent}% smaller`;
+      return `${Math.abs(savingsPercent)}% LARGER`;
+    }
+
+    function setStatus(status, result) {
+      statusBadge.textContent = status;
+      statusBadge.className = "job-terminal-status " + status;
+      cancelBtn.style.display = status === "running" || status === "queued" ? "inline-block" : "none";
+
+      if (status === "completed" && result) {
+        if (result.skipped) {
+          if (result.reason === "not_smaller") {
+            appendLine(`[RESULT] Skipped — the compressed version would have been ${describeSizeChange(result.wouldBeSavingsPercent)}, so the original file was kept. This is never overridden, even with "force".`);
+          } else {
+            appendLine(`[RESULT] Skipped — savings would only have been ${describeSizeChange(result.wouldBeSavingsPercent)}, original file kept.`);
+          }
+        } else {
+          appendLine(`[RESULT] Done — ${formatMB(result.originalSizeBytes)} MB → ${formatMB(result.newSizeBytes)} MB (${describeSizeChange(result.savingsPercent)}).`);
+        }
+        // Refresh the analysis panel above so the displayed size reflects
+        // the new file once the job finishes.
+        setTimeout(loadAnalysis, 2000);
+      }
+    }
+
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource(`/api/job/${currentJobId}/stream`);
+    eventSource.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "snapshot") {
+          const job = msg.job;
+          (job.log || []).forEach(appendLine);
+          progressBar.style.width = Math.min(100, Math.max(0, job.progress || 0)) + "%";
+          setStatus(job.status, job.result);
+        } else if (msg.type === "log") {
+          appendLine(msg.line);
+        } else if (msg.type === "status") {
+          setStatus(msg.status, msg.result);
+        } else if (msg.type === "progress") {
+          progressBar.style.width = Math.min(100, Math.max(0, msg.progress)) + "%";
+        }
+      } catch (_) {}
+    };
+
+    cancelBtn.addEventListener("click", async () => {
+      if (!currentJobId) return;
+      try {
+        await fetch(`/api/job/${currentJobId}/cancel`, { method: "POST" });
+        appendLine("[CANCEL] Cancellation requested.");
+      } catch (err) {
+        appendLine("[ERROR] " + err.message);
+      }
+    });
+  }
+
+  await loadAnalysis();
+}
+
 async function domInserter() {
   const dataObject = await fetchApi();
   if (!dataObject || !dataObject.length) {
@@ -408,6 +618,7 @@ async function domInserter() {
       </div>
     </div>
     <div id="subtitlePanel" style="max-width:1100px;margin:16px auto;padding:0 24px;"></div>
+    <div id="compressionPanel" style="max-width:1100px;margin:16px auto;padding:0 24px;"></div>
   `;
 
   // Initialize edit functionality
@@ -425,6 +636,11 @@ async function domInserter() {
   const subtitlePanelEl = document.getElementById("subtitlePanel");
   if (videoEl && subtitleSelectEl && subtitlePanelEl) {
     setupSidecarSubtitles("movie", id, videoEl, subtitleSelectEl, subtitlePanelEl);
+  }
+
+  const compressionPanelEl = document.getElementById("compressionPanel");
+  if (compressionPanelEl) {
+    setupCompressionPanel("movie", id, compressionPanelEl);
   }
 }
 
